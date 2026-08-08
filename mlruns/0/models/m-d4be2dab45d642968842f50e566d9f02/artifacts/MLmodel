@@ -1,0 +1,23 @@
+artifact_path: /Users/marcelo-salvador/desenvolvimento/workspace/fiap/10mlet/fase2/10-machine-learning-engineering-02/mlruns/0/models/m-d4be2dab45d642968842f50e566d9f02/artifacts
+flavors:
+  python_function:
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.sklearn
+    model_path: model.pkl
+    predict_fn: predict
+    python_version: 3.12.2
+  sklearn:
+    code: null
+    pickled_model: model.pkl
+    serialization_format: cloudpickle
+    sklearn_version: 1.8.0
+    skops_trusted_types: null
+mlflow_version: 3.11.1
+model_id: m-d4be2dab45d642968842f50e566d9f02
+model_size_bytes: 1713
+model_uuid: m-d4be2dab45d642968842f50e566d9f02
+prompts: null
+run_id: 8da59df917804735b0ad85a4294c69d0
+utc_time_created: '2026-08-08 15:28:09.439109'
