@@ -1,0 +1,50 @@
+# VCS
+.git
+.gitignore
+
+# Python/cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Notebooks and local artifacts
+notebooks/
+logs/
+mlruns/
+mlartifacts/
+mlflow.db
+
+# Data (raw/processed are not required by API runtime image)
+data/
+
+# Terraform and infra docs
+infra/
+docs/
+
+# Monitoring and local compose assets (not used in API container image)
+monitoring/
+docker-compose.yml
+
+# OS/editor files
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Build/dist artifacts
+build/
+dist/
+*.egg-info/
+churn_prediction.egg-info/
+telco_churn.egg-info/

@@ -7,39 +7,42 @@ name = "telco-churn"
 version = "0.1.0"
 description = "Telco Customer Churn Prediction — FIAP 10MLET Tech Challenge"
 requires-python = ">=3.10"
+# Dependencias de RUNTIME (API de inferencia). Mantidas enxutas para a imagem
+# Docker/AWS: ver libs de treino/EDA em [project.optional-dependencies].train.
 dependencies = [
     # Deep Learning
     "torch>=2.0.0,<2.3.0; sys_platform == 'darwin' and platform_machine == 'x86_64'",
     "torch>=2.0.0; sys_platform != 'darwin' or platform_machine != 'x86_64'",
-    # ML / Data
+    # ML / Data (necessarias para carregar o preprocessor e inferir)
     "scikit-learn>=1.4",
     "pandas>=2.0",
     "numpy>=1.26,<2.0.0",
-    "imbalanced-learn>=0.12",
     "joblib>=1.3",
     "scipy>=1.12",
-    # Experiment tracking
-    "mlflow>=2.10",
     # API
     "fastapi>=0.110",
     "uvicorn[standard]>=0.28",
     "pydantic>=2.6",
     "pydantic-settings>=2.0",
-    "openpyxl>=3.1",
-    # Data validation
-    "pandera>=0.18",
     # Utilities
     "python-dotenv>=1.0",
     "loguru>=0.7",
-    # Visualização
-    "matplotlib>=3.8",
-    "seaborn>=0.13",
     "python-jose[cryptography]>=3.5.0",
     "bcrypt>=4.0.1",
     "prometheus-client>=0.25.0",
 ]
 
 [project.optional-dependencies]
+# Libs usadas apenas em treino/EDA/tracking — NAO vao para a imagem de runtime.
+# Instale localmente com: uv sync --extra train
+train = [
+    "imbalanced-learn>=0.12",
+    "mlflow>=2.10",
+    "openpyxl>=3.1",
+    "pandera>=0.18",
+    "matplotlib>=3.8",
+    "seaborn>=0.13",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
@@ -48,6 +51,10 @@ dev = [
     "ruff>=0.3",
     "ipykernel>=6.29",
     "jupyter>=1.0",
+    # Fairness: usada por src/monitoring/fairness.py e tests/test_fairness.py.
+    # Fica fora do runtime (analise offline via `make fairness`), mas e necessaria
+    # no CI, que instala apenas o extra dev (uv sync --extra dev --frozen).
+    "fairlearn>=0.10",
 ]
 
 [tool.setuptools.packages.find]
@@ -57,6 +64,7 @@ include = ["src*"]
 [tool.ruff]
 line-length = 88
 target-version = "py310"
+exclude = ["notebooks/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM"]
@@ -64,7 +72,15 @@ ignore = ["E501", "B008"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101"]
-"notebooks/*" = ["E402", "F401"]
+# Notebooks de EDA/baselines: tolerar padroes comuns de exploracao
+#   E402 - imports apos codigo (celulas)
+#   F401 - imports nao usados (libs carregadas para conveniencia)
+#   B905 - zip() sem strict= (comum em loops de plot)
+#   B007 - variavel de loop nao usada (ex.: `for i, _ in enumerate(...)`)
+#   B018 - expressao "inutil" (df.head() exibido como saida da celula)
+#   E741 - nomes ambiguos (l, I, O) usados em exemplos
+#   SIM - simplificacoes nao essenciais em codigo exploratorio
+"notebooks/*" = ["E402", "F401", "B905", "B007", "B018", "E741", "SIM"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -78,3 +94,16 @@ omit = ["tests/*", "notebooks/*"]
 [tool.uv]
 # torch-backend is not a valid uv field; CPU-only torch is handled via
 # the sys_platform conditional in [project.dependencies]
+
+# Em Linux (imagem AWS/Fargate e CI Linux), o torch e resolvido do indice CPU-only.
+# Isso evita baixar ~2GB de bibliotecas CUDA da NVIDIA, que sao inuteis para
+# inferencia em CPU. macOS e Windows continuam usando o indice padrao (PyPI).
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", marker = "sys_platform == 'linux'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

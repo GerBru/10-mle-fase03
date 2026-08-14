@@ -1,0 +1,46 @@
+aws_region   = "us-east-1"
+project_name = "churn-prediction"
+environment  = "dev"
+
+vpc_cidr = "10.42.0.0/16"
+public_subnet_cidrs = [
+  "10.42.1.0/24",
+  "10.42.2.0/24"
+]
+
+container_port = 8000
+desired_count  = 1
+task_cpu       = 256
+task_memory    = 512
+
+# Recomendado: usar a URL de output ecr_repository_url + tag da imagem.
+container_image = "123456789012.dkr.ecr.us-east-1.amazonaws.com/churn-prediction-dev-api:latest"
+
+# Opcional: imagem custom do Grafana (provisioning embutido).
+# Se vazio, usa o repo ECR dedicado do Grafana (output ecr_grafana_repository_url) com a tag :latest.
+grafana_image = ""
+
+jwt_expire_minutes  = 60
+models_dir          = "models"
+log_level           = "INFO"
+rate_limit_requests = 100
+rate_limit_window   = 60
+health_check_path   = "/ready"
+alb_ingress_cidr    = "0.0.0.0/0"
+api_log_retention_in_days           = 7
+observability_desired_count         = 1
+observability_task_cpu              = 512
+observability_task_memory           = 2048
+observability_log_retention_in_days = 7
+
+# Opcional: reutilizar roles IAM existentes (ambientes com IAM restrito).
+# Se vazio, o Terraform tentara criar as roles.
+ecs_task_execution_role_arn         = ""
+ecs_task_role_arn                   = ""
+observability_task_execution_role_arn = ""
+observability_task_role_arn           = ""
+
+tags = {
+  Owner      = "time-mlops"
+  CostCenter = "fiap-tech-challenge"
+}
