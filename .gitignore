@@ -83,3 +83,4 @@ crash.log
 *.tfvars
 *.tfvars.json
 !*.tfvars.example
+.DS_Store
