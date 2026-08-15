@@ -5,9 +5,10 @@ Consome os splits já processados pelo estágio de preprocess (src/pipeline/prep
 e executa o ciclo de treino:
     1. Carrega os splits processados (data/processed/splits.joblib)
     2. Treina baselines (DummyClassifier, LogReg, RF, GBT) com cross-validation
-    3. Treina MLP PyTorch com early stopping
-    4. Loga todos os experimentos no MLflow
-    5. Salva artefatos em models/
+    3. Promove o melhor baseline sklearn no MLflow Model Registry
+    4. Treina MLP PyTorch com early stopping
+    5. Loga todos os experimentos no MLflow
+    6. Salva artefatos em models/
 
 Uso:
     dvc repro              # roda preprocess → train
@@ -29,6 +30,7 @@ import yaml
 from src.models.baseline import build_baselines, train_baseline
 from src.models.evaluation import compute_metrics
 from src.models.mlp import MLPTrainer
+from src.models.registry import log_and_register_champion
 from src.utils import settings
 from src.utils.logger import get_logger
 
@@ -152,8 +154,18 @@ def main():
         mlflow.log_param("random_state", RANDOM_STATE)
 
         logger.info("Training baselines...")
-        baseline_results, _, _ = _run_baselines(X_train_df, y_train, X_test_df, y_test)
+        baseline_results, best_pipeline, best_name = _run_baselines(
+            X_train_df, y_train, X_test_df, y_test
+        )
         results.update(baseline_results)
+
+        logger.info("Promoting best baseline to Model Registry...")
+        log_and_register_champion(
+            best_pipeline,
+            X_test_df,
+            baseline_name=best_name,
+            metrics=baseline_results.get(best_name),
+        )
 
         logger.info("Training MLP PyTorch...")
         mlp_result = _train_mlp_experiment(
