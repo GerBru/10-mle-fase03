@@ -55,10 +55,14 @@ stages:
       hash: md5
       md5: 86d3995281493c6b4be9d2ea3fdb7d0f
       size: 11643
+    - path: src/models/registry.py
+      hash: md5
+      md5: 27367bf17ef7975b0b0b98205af86361
+      size: 6251
     - path: src/training/train.py
       hash: md5
-      md5: 6aaaf565ac3f2bf7ebfa0e44cfa971fe
-      size: 7143
+      md5: c5bb92c03c666f7342d005d853344f41
+      size: 7563
     params:
       params.yaml:
         train.mlp:
@@ -76,17 +80,17 @@ stages:
     outs:
     - path: models/best_baseline.joblib
       hash: md5
-      md5: d1b91556a319078f5229e3b1bf1aa948
+      md5: 92871f681012dc18d9636cd20b0eb651
       size: 9322
     - path: models/mlp_model.pt
       hash: md5
-      md5: 2f3f57c7451a94e9a834dc1e58b69ff6
-      size: 83736
+      md5: d2c230df0edc6139ffc1506dfba031b5
+      size: 83335
     - path: models/model_config.json
       hash: md5
       md5: e56ede94e01676483b3f8d970864d0e8
       size: 47
     - path: models/results.json
       hash: md5
-      md5: 218e4d5f164909c45ce13c7d4fb30e3c
-      size: 808
+      md5: f4702d36f996207208d4428764e6ee43
+      size: 807
