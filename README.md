@@ -742,7 +742,7 @@ o que os mantém executáveis em CI.
 | +     | Assinatura inferida + `input_example` (colunas inteiras como float, tolerante a nulos)        | ✅ Concluída   |
 | +     | 6 testes do Registry com backend SQLite isolado                                               | ✅ Concluída   |
 | 3     | Dependências / `.env` / Docker                                                                | 🔲 Pendente    |
-| 4     | README + vídeo STAR                                                                           | 🔄 Em curso    |
+| 4     | README + vídeo STAR                                                                           | 🔲 Pendente    |
 | 5     | Ajustes de `metrics.json` e `.gitignore`                                                      | 🔲 Pendente    |
 | —     | Migrar remote do DVC para storage compartilhado (desbloqueia o CD)                            | 🔲 Pendente    |
 
