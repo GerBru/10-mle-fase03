@@ -1,0 +1,5 @@
+[core]
+    analytics = false
+    remote = localstorage
+['remote "localstorage"']
+    url = ../../dvc-storage-fase2

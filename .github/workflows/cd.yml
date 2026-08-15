@@ -20,6 +20,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Instala uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Baixa dataset e modelos versionados pelo DVC
+        # Os artefatos de models/ e data/raw/ nao ficam no git (ver dvc.yaml).
+        # O build de Docker abaixo depende deles existirem no contexto local.
+        # NOTA: o remote atual (../dvc-storage-fase2) e uma pasta local, nao
+        # alcancavel por este runner -- este passo falha propositalmente ate
+        # o remote ser migrado para um destino acessivel pela CI (ex.: S3).
+        # Preferimos falhar aqui a publicar uma imagem sem os artefatos do modelo.
+        run: |
+          uv sync --extra train --frozen
+          uv run dvc pull
+
       - name: Log in no GitHub Container Registry
         uses: docker/login-action@v3
         with:

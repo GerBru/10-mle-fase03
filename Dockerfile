@@ -28,6 +28,13 @@ COPY src/ ./src/
 COPY pyproject.toml ./
 COPY models/ ./models/
 
+# Os artefatos de modelo sao gerenciados pelo DVC (nao ficam no git). Falha o
+# build cedo se estiverem ausentes do contexto -- evita publicar uma imagem
+# que sobe saudavel mas nunca carrega o modelo (ver `dvc pull` no workflow de CD).
+RUN test -f models/preprocessor.joblib && \
+    test -f models/mlp_model.pt && \
+    test -f models/model_config.json
+
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
