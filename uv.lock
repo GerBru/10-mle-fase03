@@ -5470,6 +5470,7 @@ train = [
     { name = "mlflow" },
     { name = "openpyxl" },
     { name = "pandera" },
+    { name = "pyyaml" },
     { name = "seaborn" },
 ]
 
@@ -5499,6 +5500,7 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "python-jose", extras = ["cryptography"], specifier = ">=3.5.0" },
+    { name = "pyyaml", marker = "extra == 'train'", specifier = ">=6.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.3" },
     { name = "scikit-learn", specifier = ">=1.4" },
     { name = "scipy", specifier = ">=1.12" },

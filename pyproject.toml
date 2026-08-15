@@ -43,6 +43,7 @@ train = [
     "matplotlib>=3.8",
     "seaborn>=0.13",
     "dvc>=3.55",
+    "pyyaml>=6.0",
 ]
 dev = [
     "pytest>=8.0",

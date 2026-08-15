@@ -1,0 +1,10 @@
+train:
+  random_state: 42
+  mlp:
+    hidden_dims: [128, 64, 32]
+    dropout_rate: 0.3
+    lr: 0.001
+    batch_size: 64
+    max_epochs: 100
+    patience: 10
+    use_batch_norm: true

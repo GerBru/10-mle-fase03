@@ -24,6 +24,7 @@ import mlflow
 import mlflow.pytorch
 import mlflow.sklearn
 import torch
+import yaml
 
 from src.models.baseline import build_baselines, train_baseline
 from src.models.evaluation import compute_metrics
@@ -33,23 +34,24 @@ from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-RANDOM_STATE = 42
 MODELS_DIR = Path("models")
 MODELS_DIR.mkdir(exist_ok=True)
 PROCESSED_DIR = Path("data/processed")
+PARAMS_PATH = Path("params.yaml")
 
 MLFLOW_EXPERIMENT = "churn-prediction"
 MLFLOW_TRACKING_URI = settings.mlflow_tracking_uri
 
-MLP_PARAMS = {
-    "hidden_dims": [128, 64, 32],
-    "dropout_rate": 0.3,
-    "lr": 1e-3,
-    "batch_size": 64,
-    "max_epochs": 100,
-    "patience": 10,
-    "use_batch_norm": True,
-}
+
+def _load_train_params() -> dict:
+    """Carrega seed e hiperparâmetros do MLP a partir de params.yaml (rastreado pelo DVC)."""
+    with open(PARAMS_PATH) as f:
+        return yaml.safe_load(f)["train"]
+
+
+TRAIN_PARAMS = _load_train_params()
+RANDOM_STATE = TRAIN_PARAMS["random_state"]
+MLP_PARAMS = TRAIN_PARAMS["mlp"]
 
 
 # ── Etapas do pipeline ────────────────────────────────────────────────────────
