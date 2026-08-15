@@ -1,7 +1,11 @@
-# 🔮 Churn Prediction — FIAP Tech Challenge Fase 1
+# 🔮 Churn Prediction — FIAP Tech Challenge Fase 2
 
 > Modelo preditivo de churn para operadora de telecomunicações.
-> Pipeline end-to-end: EDA → Baselines → MLP (PyTorch) → API (FastAPI) → Deploy (Docker + CI/CD).
+> Pipeline end-to-end reprodutível: DVC → Baselines → Model Registry → MLP (PyTorch) → API (FastAPI) → Deploy (Docker + CI/CD).
+
+**Fase 2** adiciona fundamentos de MLOps sobre a base da Fase 1: versionamento de dados
+e pipeline reprodutível com **DVC**, e promoção de modelos com o **MLflow Model Registry**.
+Toda a estrutura da Fase 1 (API, monitoramento, MLP PyTorch, IaC) foi preservada.
 
 Python
 PyTorch
@@ -20,9 +24,11 @@ Uma operadora de telecomunicações enfrenta perda acelerada de clientes. Este p
 constrói um sistema preditivo de churn do zero até o modelo servido via API, aplicando
 boas práticas de Machine Learning Engineering:
 
+- **Versionamento de dados:** DVC — dataset e artefatos fora do git, pipeline em estágios (`preprocess` → `train`)
 - **Modelo principal:** Rede neural MLP treinada com PyTorch
 - **Baselines:** DummyClassifier, LogisticRegression, RandomForest (com RandomizedSearchCV), GradientBoosting
 - **Rastreamento:** MLflow (parâmetros, métricas, artefatos)
+- **Promoção de modelos:** MLflow Model Registry — melhor baseline sklearn promovido com alias `@champion`
 - **Serving:** API REST com FastAPI + Pydantic (single e batch inference)
 - **Segurança:** JWT + API Key + Rate Limiting + CORS
 - **Monitoramento:** Drift detection com KS test + PSI; análise de fairness com Fairlearn MetricFrame
@@ -51,7 +57,10 @@ boas práticas de Machine Learning Engineering:
 │   ├── models/
 │   │   ├── baseline.py          # DummyClassifier, LogReg, RF, GBT + train_baseline()
 │   │   ├── evaluation.py        # evaluate_model(), compute_metrics()
-│   │   └── mlp.py               # ChurnMLP (PyTorch) + EarlyStopping + MLPTrainer
+│   │   ├── mlp.py               # ChurnMLP (PyTorch) + EarlyStopping + MLPTrainer
+│   │   └── registry.py          # Promoção no MLflow Model Registry (alias @champion)
+│   ├── pipeline/
+│   │   └── preprocess.py        # Estágio DVC: carga → validação → split → features
 │   ├── monitoring/
 │   │   ├── __init__.py
 │   │   ├── drift_detection.py   # KS test + PSI para monitoramento pós-deploy
@@ -67,6 +76,7 @@ boas práticas de Machine Learning Engineering:
 │   ├── test_fairness.py         # Testes de fairness (Fairlearn MetricFrame)
 │   ├── test_model.py            # Testes do MLP PyTorch
 │   ├── test_preprocessing.py    # Testes de pré-processamento
+│   ├── test_registry.py         # Testes do Model Registry (backend SQLite isolado)
 │   ├── test_schema.py           # Validação do schema do dataset (Pandera)
 │   └── test_smoke.py            # Smoke tests: pipeline e MLP
 ├── notebooks/
@@ -74,12 +84,14 @@ boas práticas de Machine Learning Engineering:
 │   ├── eda.ipynb                # EDA exploratório (dataset Telco)
 │   └── modeling.ipynb           # Experimentos de modelagem
 ├── data/
-│   ├── raw/                     # dataset original (não versionado)
-├── models/                      # artefatos treinados (parcialmente versionados)
-│   ├── best_baseline.joblib     # melhor baseline (RandomForest/GBT)
-│   └── mlp_model.pt             # checkpoint PyTorch (gerado por make train; não versionado)
+│   ├── raw/                     # dataset original (versionado via DVC)
+│   └── processed/               # splits.joblib (saída do estágio preprocess)
+├── models/                      # artefatos gerenciados pelo DVC (fora do git)
+│   ├── best_baseline.joblib     # melhor baseline sklearn (promovido no Registry)
+│   ├── mlp_model.pt             # checkpoint PyTorch
 │   ├── model_config.json        # input_dim e metadados do MLP
 │   ├── preprocessor.joblib      # pipeline sklearn de pré-processamento
+│   └── results.json             # métricas rastreadas pelo DVC
 ├── monitoring/                  # stack de observabilidade local (docker-compose)
 │   ├── prometheus.yml           # scrape da API (/metrics)
 │   └── grafana/
@@ -118,6 +130,9 @@ boas práticas de Machine Learning Engineering:
 │   └── workflows/
 │       ├── ci.yml               # CI: lint + testes em todo PR
 │       └── cd.yml               # CD: build e push Docker para GHCR
+├── dvc.yaml                     # estágios do pipeline (preprocess → train)
+├── dvc.lock                     # hashes de deps, outs e params de cada estágio
+├── params.yaml                  # seed e hiperparâmetros centralizados (rastreados pelo DVC)
 ├── pyproject.toml               # dependências + config de ferramentas (single source of truth)
 ├── Makefile                     # atalhos (install, lint, test, train, fairness, run)
 ├── Dockerfile                   # imagem multi-stage para produção
@@ -218,11 +233,23 @@ uv run python -c "from src.utils.config import settings; print('Seed:', settings
 
 ### Dataset
 
-Baixe o dataset [Telco Customer Churn (IBM)](https://www.kaggle.com/datasets/yeanzc/telco-customer-churn-ibm-dataset) e coloque em:
+O dataset é versionado com DVC — o git rastreia apenas o ponteiro
+`data/raw/Telco_customer_churn.csv.dvc`. Para recuperar o arquivo:
 
+```bash
+uv run dvc pull
 ```
-data/raw/Telco_customer_churn.csv
-```
+
+> **Limitação conhecida:** o remote configurado é local (`../dvc-storage-fase2`),
+> um caminho relativo que só existe na máquina de quem versionou os dados.
+> `dvc pull` falhará para os demais integrantes e no runner de CI. Enquanto o
+> remote não migrar para um storage compartilhado (ex.: S3), baixe o dataset
+> [Telco Customer Churn (IBM)](https://www.kaggle.com/datasets/yeanzc/telco-customer-churn-ibm-dataset)
+> manualmente para `data/raw/Telco_customer_churn.csv` e rode `uv run dvc status`
+> para confirmar que o hash confere.
+
+Sem o dataset, seis testes de `test_schema.py` são pulados silenciosamente
+(`pytest -rs` mostra o motivo).
 
 ---
 
@@ -234,6 +261,8 @@ data/raw/Telco_customer_churn.csv
 | `make install`   | Instala dependências de desenvolvimento (`--extra dev`)                       |
 | `make mlflow-ui` | Abre o MLflow UI em `http://localhost:5001`*                                  |
 | `make train`     | Treina baselines + MLP, loga no MLflow, salva artefatos (requer MLflow ativo) |
+| `uv run dvc repro` | Reproduz o pipeline completo (`preprocess` → `train`), pulando estágios sem mudança |
+| `uv run dvc status` | Mostra quais estágios estão desatualizados                                 |
 | `make run`       | Sobe a API FastAPI em `http://localhost:8000`                                 |
 | `make test`      | Roda todos os testes com pytest                                               |
 | `make lint`      | Verifica estilo com ruff                                                      |
@@ -246,22 +275,111 @@ data/raw/Telco_customer_churn.csv
 
 ---
 
+## 🔁 Pipeline reprodutível (DVC)
+
+O treino é dividido em dois estágios declarados em `dvc.yaml`. O DVC rastreia
+dependências, saídas e parâmetros de cada um, e pula estágios cujas entradas
+não mudaram.
+
+
+| Estágio      | Comando                                | Saídas                                                        |
+| ------------ | -------------------------------------- | ------------------------------------------------------------- |
+| `preprocess` | `uv run python -m src.pipeline.preprocess` | `data/processed/splits.joblib`, `models/preprocessor.joblib` |
+| `train`      | `uv run python -m src.training.train`  | `models/best_baseline.joblib`, `mlp_model.pt`, `model_config.json` |
+
+
+Hiperparâmetros e seed vivem em `params.yaml`, não mais hardcoded no código:
+
+```yaml
+train:
+  random_state: 42
+  mlp:
+    hidden_dims: [128, 64, 32]
+    dropout_rate: 0.3
+    ...
+```
+
+```bash
+# Terminal 1: MLflow precisa estar ativo — o estágio train registra runs
+make mlflow-ui
+
+# Terminal 2
+uv run dvc repro          # roda apenas o que mudou
+uv run dvc repro -f train # força a reexecução do treino
+uv run dvc metrics show   # exibe models/results.json
+```
+
+> `models/results.json` é declarado como métrica com `cache: false`, então fica
+> versionado no git e pode ser comparado entre commits com `dvc metrics diff`.
+
+---
+
+## 🏆 MLflow Model Registry
+
+Ao final do treino, o **melhor baseline sklearn por F1** é logado com assinatura
+inferida e promovido no Model Registry como `churn-classifier`, recebendo o alias
+`@champion`.
+
+A promoção usa **alias**, não *stages* — depreciados desde o MLflow 2.9. Uma tag
+`stage=production` é gravada na versão para manter a legibilidade do estágio na UI
+sem invocar a API depreciada.
+
+```python
+from src.models.registry import load_champion
+
+model = load_champion()          # models:/churn-classifier@champion
+model.predict(df_raw)            # pipeline autocontido: aceita dados crus
+```
+
+Ou diretamente pelo MLflow:
+
+```python
+import mlflow
+
+model = mlflow.sklearn.load_model("models:/churn-classifier@champion")
+```
+
+O modelo registrado é um `Pipeline` sklearn completo — pré-processamento e
+classificador —, portanto prediz a partir do CSV original sem depender do
+`preprocessor.joblib`.
+
+Cada execução do treino cria uma nova versão e move o alias para ela. Se o
+Registry estiver indisponível (servidor fora do ar, backend sem banco), o módulo
+loga o erro e o treino segue normalmente — a promoção é opcional, o pipeline não
+quebra.
+
+> O Registry exige backend com banco de dados. O projeto usa
+> `MLFLOW_TRACKING_URI=http://localhost:5001` com SQLite; um file store puro
+> não suporta `register_model`.
+
+Consulte no MLflow UI: **Models → churn-classifier**.
+
+---
+
 ## 🏗️ Arquitetura
 
 ```
-data/raw/Telco_customer_churn.csv
+data/raw/Telco_customer_churn.csv (DVC)
          │
     load_data() + clean_data()     # renomeia colunas, imputa, normaliza
          │
     build_full_pipeline()          # FeatureEngineer → ColumnTransformer
          │                         # num: StandardScaler / cat: OneHotEncoder
     train/val/test split
-    (estratificado, seed=42)
+    (estratificado, seed de params.yaml)
          │
+    data/processed/splits.joblib      # fim do estágio DVC `preprocess`
+         │                            # início do estágio DVC `train`
     ┌────┴────────────────────────────┐
     │  Baselines (sklearn)             │  Dummy, LogReg, RF, GBT
     │  evaluation.py                   │  evaluate_model(), compute_metrics()
     │  MLflow nested runs              │  params, métricas, artefatos
+    └────┬────────────────────────────┘
+         │
+    ┌────┴────────────────────────────┐
+    │  registry.py                     │  melhor baseline por F1
+    │  log_model + register_model      │  assinatura + input_example
+    │  set_registered_model_alias      │  churn-classifier@champion
     └────┬────────────────────────────┘
          │
     ┌────┴────────────────┐
@@ -490,7 +608,7 @@ O Dockerfile usa cache do uv (`--mount=type=cache`) para otimizar builds:
 
 | Workflow | Trigger           | O que faz                        |
 | -------- | ----------------- | -------------------------------- |
-| `ci.yml` | Todo push e PR    | Lint (ruff) + 43 testes (pytest) |
+| `ci.yml` | Todo push e PR    | Lint (ruff) + 58 testes (pytest) |
 | `cd.yml` | Merge para `main` | Build Docker + push para GHCR    |
 
 
@@ -515,28 +633,50 @@ Para manter o `README` enxuto, o passo a passo completo (credenciais sem hardcod
 ## 📊 Métricas Principais
 
 
-| Modelo             | AUC-ROC  | F1       | Recall   |
-| ------------------ | -------- | -------- | -------- |
-| DummyClassifier    | 0.52     | 0.29     | 0.29     |
-| RandomForest       | 0.83     | 0.58     | 0.53     |
-| GradientBoosting   | 0.86     | 0.59     | 0.53     |
-| LogisticRegression | 0.85     | 0.61     | 0.57     |
-| **MLP (PyTorch)**  | **0.86** | **0.62** | **0.59** |
+| Modelo                        | AUC-ROC    | F1         | Precision  | Recall     |
+| ----------------------------- | ---------- | ---------- | ---------- | ---------- |
+| DummyClassifier               | 0.5163     | 0.2903     | 0.2891     | 0.2914     |
+| RandomForest                  | 0.8337     | 0.5514     | 0.6229     | 0.4947     |
+| GradientBoosting              | 0.8555     | 0.5944     | 0.6689     | 0.5348     |
+| **LogisticRegression** 🏆     | 0.8533     | **0.6205** | 0.5103     | 0.7914     |
+| **MLP (PyTorch)**             | 0.8539     | **0.6299** | 0.5040     | 0.8396     |
 
 
-*Valores do conjunto de teste (ver `docs/model_card.md`). Execute `make train` para reproduzir no seu ambiente.*
+🏆 = promovido no Model Registry como `churn-classifier@champion`.
+
+*Valores do conjunto de teste, extraídos de `models/results.json` (ver também
+`docs/model_card.md`). Execute `uv run dvc repro` para reproduzir — os seeds fixos
+garantem os mesmos números.*
+
+**Por que a LogisticRegression e não o GradientBoosting?** O critério de seleção é
+F1, e por F1 a LogReg vence entre os baselines. O GBT tem accuracy e precision
+superiores, mas recall bem menor (0.5348 contra 0.7914). Para retenção de clientes,
+deixar de identificar quem vai cancelar custa mais do que oferecer desconto a quem
+ficaria de qualquer forma. Vale notar que LogReg e RandomForest usam
+`class_weight="balanced"` e o GBT não — a comparação não é perfeitamente isonômica.
+
+A MLP supera todos os baselines em F1 e recall, mas o Registry recebe o modelo
+sklearn conforme o escopo da Fase 2; a MLP permanece rastreada no MLflow Tracking.
 
 ---
 
 ## 🧪 Testes
 
-43 testes passando, cobrindo: smoke, schema (pandera), API (JWT + API Key + batch), model e preprocessing.
+58 testes passando, cobrindo: smoke, schema (pandera), API (JWT + API Key + batch),
+model, preprocessing, fairness e Model Registry.
 
 ```bash
 make test
 # ou
 uv run pytest tests/ -v
 ```
+
+Os testes do Registry (`tests/test_registry.py`) usam um backend SQLite temporário
+por teste — exercitam a API real do MLflow sem exigir um servidor de tracking ativo,
+o que os mantém executáveis em CI.
+
+> Sem o dataset em `data/raw/`, seis testes de schema são **pulados** e a suíte
+> ainda reporta sucesso. Use `uv run pytest -rs` para ver os skips.
 
 ### Warnings conhecidos
 
@@ -578,7 +718,7 @@ uv run pytest tests/ -v
 | 4     | Model Card + README + Docker multi-stage + CI/CD GitHub Actions                                           | ✅ Concluída |
 | +     | Docker: multi-stage build com uv + usuário não-root + healthcheck                                         | ✅ Concluída |
 | +     | Docker: cache de build (6min → 2s na segunda execução)                                                    | ✅ Concluída |
-| +     | CI: lint + 43 testes automáticos em todo PR (GitHub Actions)                                              | ✅ Concluída |
+| +     | CI: lint + testes automáticos em todo PR (GitHub Actions)                                                 | ✅ Concluída |
 | +     | CD: build e push automático para GHCR no merge para main                                                  | ✅ Concluída |
 | +     | Observabilidade: Prometheus /metrics + trace_id + X-Trace-ID                                              | ✅ Concluída |
 | +     | Fairness: MetricFrame + mf.difference() por gender, senior_citizen e contract                             | ✅ Concluída |
@@ -588,6 +728,23 @@ uv run pytest tests/ -v
 | +     | Design Patterns: Strategy (RiskClassifier), Repository (UserRepo + ModelRepo), Facade (PredictionService) | ✅ Concluída |
 | +     | Cobertura de testes: 43/43 mantidos, 70% de cobertura medida                                              | ✅ Concluída |
 | 5     | Deploy AWS ECS Fargate                                                                                    | ✅ Concluída |
+
+
+### Fase 2 — MLOps
+
+
+| Etapa | Foco                                                                                          | Status        |
+| ----- | --------------------------------------------------------------------------------------------- | ------------- |
+| 1     | DVC: versionamento do dataset + pipeline em estágios (`preprocess` → `train`)                 | ✅ Concluída   |
+| +     | `params.yaml`: seed e hiperparâmetros centralizados e rastreados                              | ✅ Concluída   |
+| +     | Trava de build/CD sem artefatos de modelo                                                     | ✅ Concluída   |
+| 2     | MLflow Model Registry: promoção do melhor baseline com alias `@champion`                      | ✅ Concluída   |
+| +     | Assinatura inferida + `input_example` (colunas inteiras como float, tolerante a nulos)        | ✅ Concluída   |
+| +     | 6 testes do Registry com backend SQLite isolado                                               | ✅ Concluída   |
+| 3     | Dependências / `.env` / Docker                                                                | 🔲 Pendente    |
+| 4     | README + vídeo STAR                                                                           | 🔄 Em curso    |
+| 5     | Ajustes de `metrics.json` e `.gitignore`                                                      | 🔲 Pendente    |
+| —     | Migrar remote do DVC para storage compartilhado (desbloqueia o CD)                            | 🔲 Pendente    |
 
 
 ---
