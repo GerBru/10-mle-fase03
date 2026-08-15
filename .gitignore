@@ -27,7 +27,7 @@ mlflow.db
 # Data
 # data/raw/*.csv
 # data/raw/*.parquet
-# data/processed/
+data/processed/
 
 # Jupyter
 .ipynb_checkpoints/

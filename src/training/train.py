@@ -1,15 +1,17 @@
 """
-Pipeline de treinamento — FIAP Tech Challenge Fase 1.
+Pipeline de treinamento — FIAP Tech Challenge Fase 2.
 
-Executa o ciclo completo de treino:
-    1. Carrega e valida o dataset com Pandera
-    2. Pré-processa e divide em treino/val/teste
-    3. Treina baselines (DummyClassifier, LogReg, RF, GBT) com cross-validation
-    4. Treina MLP PyTorch com early stopping
-    5. Loga todos os experimentos no MLflow
-    6. Salva artefatos em models/
+Consome os splits já processados pelo estágio de preprocess (src/pipeline/preprocess.py)
+e executa o ciclo de treino:
+    1. Carrega os splits processados (data/processed/splits.joblib)
+    2. Treina baselines (DummyClassifier, LogReg, RF, GBT) com cross-validation
+    3. Treina MLP PyTorch com early stopping
+    4. Loga todos os experimentos no MLflow
+    5. Salva artefatos em models/
 
 Uso:
+    dvc repro              # roda preprocess → train
+    # ou, isoladamente (requer data/processed/splits.joblib já gerado):
     uv run python -m src.training.train
     # ou
     make train
@@ -23,13 +25,6 @@ import mlflow.pytorch
 import mlflow.sklearn
 import torch
 
-from src.data.preprocessing import (
-    build_full_pipeline,
-    clean_data,
-    load_data,
-    split_data,
-)
-from src.data.schema import validate_raw
 from src.models.baseline import build_baselines, train_baseline
 from src.models.evaluation import compute_metrics
 from src.models.mlp import MLPTrainer
@@ -41,8 +36,8 @@ logger = get_logger(__name__)
 RANDOM_STATE = 42
 MODELS_DIR = Path("models")
 MODELS_DIR.mkdir(exist_ok=True)
+PROCESSED_DIR = Path("data/processed")
 
-DATA_PATH = settings.data_path
 MLFLOW_EXPERIMENT = "churn-prediction"
 MLFLOW_TRACKING_URI = settings.mlflow_tracking_uri
 
@@ -59,27 +54,11 @@ MLP_PARAMS = {
 
 # ── Etapas do pipeline ────────────────────────────────────────────────────────
 
-def _load_and_validate(data_path):
-    """Carrega CSV e valida schema com Pandera."""
-    logger.info("Loading and validating data from {}", data_path)
-    df_raw = load_data(data_path)
-    validate_raw(df_raw)
-    return df_raw
-
-
-def _build_preprocessed_splits(df) -> tuple:
-    """Limpa, divide e aplica o pipeline completo. Retorna (pipeline, arrays, labels)."""
-    df = clean_data(df)
-    X_train_df, X_val_df, X_test_df, y_train, y_val, y_test = split_data(df)
-
-    pipeline = build_full_pipeline()
-    X_train = pipeline.fit_transform(X_train_df)
-    X_val = pipeline.transform(X_val_df)
-    X_test = pipeline.transform(X_test_df)
-
-    joblib.dump(pipeline, MODELS_DIR / "preprocessor.joblib")
-    logger.info("Full pipeline fitted. Feature dim: {}", X_train.shape[1])
-    return pipeline, X_train_df, X_val_df, X_test_df, X_train, X_val, X_test, y_train, y_val, y_test
+def _load_splits() -> dict:
+    """Carrega os splits processados gerados pelo estágio de preprocess."""
+    splits_path = PROCESSED_DIR / "splits.joblib"
+    logger.info("Loading preprocessed splits from {}", splits_path)
+    return joblib.load(splits_path)
 
 
 def _run_baselines(X_train_df, y_train, X_test_df, y_test) -> tuple:
@@ -156,17 +135,15 @@ def main():
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
     mlflow.set_experiment(MLFLOW_EXPERIMENT)
 
-    df_raw = _load_and_validate(DATA_PATH)
-    (
-        pipeline, X_train_df, X_val_df, X_test_df,
-        X_train, X_val, X_test,
-        y_train, y_val, y_test,
-    ) = _build_preprocessed_splits(df_raw)
+    splits = _load_splits()
+    X_train_df, X_val_df, X_test_df = splits["X_train_df"], splits["X_val_df"], splits["X_test_df"]
+    X_train, X_val, X_test = splits["X_train"], splits["X_val"], splits["X_test"]
+    y_train, y_val, y_test = splits["y_train"], splits["y_val"], splits["y_test"]
 
     results: dict = {}
 
     with mlflow.start_run(run_name="churn_experiment"):
-        mlflow.log_param("dataset", DATA_PATH)
+        mlflow.log_param("dataset", str(settings.data_path))
         mlflow.log_param("train_size", len(X_train_df))
         mlflow.log_param("val_size", len(X_val_df))
         mlflow.log_param("test_size", len(X_test_df))
