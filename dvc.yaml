@@ -19,6 +19,7 @@ stages:
       - src/models/baseline.py
       - src/models/evaluation.py
       - src/models/mlp.py
+      - src/models/registry.py
       - data/processed/splits.joblib
     params:
       - train.random_state
