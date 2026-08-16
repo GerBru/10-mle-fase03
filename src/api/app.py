@@ -18,7 +18,6 @@ Observabilidade:
 import time
 import uuid
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import Annotated
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Request, status
@@ -37,7 +36,7 @@ from src.api.metrics import (
     REQUEST_LATENCY,
     REQUESTS_TOTAL,
 )
-from src.api.model_loader import LocalModelRepository, ModelRepository
+from src.api.model_loader import ModelRepository, build_model_repository
 from src.api.prediction_service import PredictionService
 from src.api.schemas import (
     BatchPredictionOutput,
@@ -115,7 +114,7 @@ BATCH_INPUT_EXAMPLE = [
 # ── Lifespan ──────────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    repo: ModelRepository = LocalModelRepository(Path(settings.models_dir))
+    repo: ModelRepository = build_model_repository()
     logger.info("Loading model artifacts from {}", str(settings.models_dir))
     try:
         loaded = repo.load()

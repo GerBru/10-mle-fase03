@@ -4,21 +4,31 @@ Carrega variáveis do arquivo .env e expõe um objeto `settings`
 com todas as configurações necessárias para treino, API e MLflow.
 Uso:
     from src.utils.config import settings
-    print(settings.seed)           # 42
-    print(settings.model_path)     # models/mlp_churn.pt
-    print(settings.mlflow_uri)     # http://localhost:5001
+    print(settings.seed)                   # 42
+    print(settings.mlflow_tracking_uri)    # http://localhost:5001
+
+Segredos (`jwt_secret_key`, `api_key`) têm valor padrão apenas para
+desenvolvimento e testes. Em `APP_ENV=production` o startup falha se eles não
+forem sobrescritos por variável de ambiente — ver `_reject_placeholder_secrets`.
 """
 import random
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 import torch
-from pydantic import Field
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Raiz do projeto — sempre absoluta, independente de onde o código é executado
 # src/utils/config.py → src/utils → src → raiz
 PROJECT_ROOT = Path(__file__).parent.parent.parent.resolve()
+
+# Valores de desenvolvimento. São públicos por definição (estão versionados) e
+# servem apenas para que testes e execução local funcionem sem `.env`.
+# `APP_ENV=production` recusa qualquer um deles no startup.
+DEV_JWT_SECRET_KEY = "dev-insecure-jwt-secret-change-me"
+DEV_API_KEY = "dev-insecure-api-key-change-me"
 
 
 class Settings(BaseSettings):
@@ -29,11 +39,16 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    # Ambiente de execução — controla a exigência de segredos reais
+    app_env: Literal["development", "production"] = Field(
+        default="development",
+        description="Use 'production' em qualquer ambiente exposto; exige segredos reais.",
+    )
+
     # Reprodutibilidade
     seed: int = Field(default=42, description="Seed global para reprodutibilidade")
 
     # Caminhos — sempre relativos à raiz do projeto
-    model_path: Path = Field(default=PROJECT_ROOT / "models" / "mlp_churn.pt")
     data_path: Path = Field(
         default=PROJECT_ROOT / "data" / "raw" / "Telco_customer_churn.csv"
     )
@@ -51,8 +66,8 @@ class Settings(BaseSettings):
 
     # Segurança — JWT
     jwt_secret_key: str = Field(
-        default="churn-secret-key-fiap-tech-challenge-2026",
-        description="Chave secreta para assinar tokens JWT. Em produção use: openssl rand -hex 32",
+        default=DEV_JWT_SECRET_KEY,
+        description="Chave secreta para assinar tokens JWT. Gere com: openssl rand -hex 32",
     )
     jwt_expire_minutes: int = Field(
         default=60,
@@ -61,8 +76,8 @@ class Settings(BaseSettings):
 
     # Segurança — API Key
     api_key: str = Field(
-        default="churn-api-key-fiap-2026",
-        description="API Key para autenticação entre serviços. Em produção use valor aleatório forte.",
+        default=DEV_API_KEY,
+        description="API Key para autenticação entre serviços. Gere com: openssl rand -hex 16",
     )
 
     # Rate Limiting
@@ -77,6 +92,47 @@ class Settings(BaseSettings):
 
     # Logging
     log_level: str = Field(default="INFO")
+
+    @field_validator("jwt_secret_key", mode="before")
+    @classmethod
+    def _default_jwt_secret(cls, value: str | None) -> str:
+        """Trata `JWT_SECRET_KEY=` (vazio no .env) como ausente, não como chave em branco."""
+        return value if value and value.strip() else DEV_JWT_SECRET_KEY
+
+    @field_validator("api_key", mode="before")
+    @classmethod
+    def _default_api_key(cls, value: str | None) -> str:
+        """Trata `API_KEY=` (vazio no .env) como ausente, não como chave em branco."""
+        return value if value and value.strip() else DEV_API_KEY
+
+    @model_validator(mode="after")
+    def _reject_placeholder_secrets(self) -> "Settings":
+        """Impede que a aplicação suba em produção com segredos de desenvolvimento.
+
+        Sem esta verificação, um container sem `.env` inicia normalmente assinando
+        JWT com uma chave versionada no repositório — falha silenciosa e explorável.
+
+        Raises:
+            ValueError: se `app_env` for 'production' e algum segredo continuar
+                com o valor padrão de desenvolvimento ou estiver vazio.
+        """
+        if self.app_env != "production":
+            return self
+
+        insecure = {
+            "JWT_SECRET_KEY": (self.jwt_secret_key, DEV_JWT_SECRET_KEY, "openssl rand -hex 32"),
+            "API_KEY": (self.api_key, DEV_API_KEY, "openssl rand -hex 16"),
+        }
+        problems = [
+            f"{var} não foi definida (gere com: {command})"
+            for var, (value, placeholder, command) in insecure.items()
+            if not value.strip() or value == placeholder
+        ]
+        if problems:
+            raise ValueError(
+                "APP_ENV=production exige segredos reais. " + "; ".join(problems)
+            )
+        return self
 
 
 def set_global_seed(seed: int) -> None:

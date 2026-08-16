@@ -10,6 +10,7 @@ import joblib
 import torch
 
 from src.models.mlp import ChurnMLP
+from src.utils.config import settings
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -72,3 +73,20 @@ class LocalModelRepository:
                 cfg = json.load(f)
             return cfg.get("input_dim"), cfg.get("hidden_dims", [64, 32, 16])
         return None, [64, 32, 16]
+
+
+def build_model_repository(models_dir: Path | None = None) -> ModelRepository:
+    """Constrói a implementação de `ModelRepository` usada pela aplicação.
+
+    Ponto único de escolha da origem dos artefatos. A API depende apenas do
+    Protocol; trocar o carregamento local por outra fonte (por exemplo, o MLflow
+    Model Registry) significa retornar outra implementação daqui, sem alterar
+    `src/api/app.py`.
+
+    Args:
+        models_dir: Diretório de artefatos. Usa `settings.models_dir` se omitido.
+
+    Returns:
+        Implementação de `ModelRepository` pronta para uso.
+    """
+    return LocalModelRepository(models_dir or Path(settings.models_dir))

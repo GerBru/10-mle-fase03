@@ -73,7 +73,9 @@ boas práticas de Machine Learning Engineering:
 │       └── logger.py            # Logging estruturado (loguru)
 ├── tests/
 │   ├── test_api.py              # Testes da API FastAPI (com JWT)
+│   ├── test_config.py           # Separação entre segredo e configuração (APP_ENV)
 │   ├── test_fairness.py         # Testes de fairness (Fairlearn MetricFrame)
+│   ├── test_patterns_adherence.py  # Aderência aos padrões documentados
 │   ├── test_model.py            # Testes do MLP PyTorch
 │   ├── test_preprocessing.py    # Testes de pré-processamento
 │   ├── test_registry.py         # Testes do Model Registry (backend SQLite isolado)
@@ -91,6 +93,7 @@ boas práticas de Machine Learning Engineering:
 │   ├── mlp_model.pt             # checkpoint PyTorch
 │   ├── model_config.json        # input_dim e metadados do MLP
 │   ├── preprocessor.joblib      # pipeline sklearn de pré-processamento
+│   ├── reference_stats.npz      # distribuição de treino (referência p/ drift)
 │   └── results.json             # métricas rastreadas pelo DVC
 ├── monitoring/                  # stack de observabilidade local (docker-compose)
 │   ├── prometheus.yml           # scrape da API (/metrics)
@@ -168,7 +171,7 @@ A documentação completa do projeto está organizada em `docs/` e no módulo de
 - [uv](https://docs.astral.sh/uv/) — gerenciador de pacotes
 - Git
 - Make (opcional, mas recomendado)
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (necessário apenas para `docker-compose up`)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (necessário apenas para `docker compose up`)
 
 ### Instalação do uv
 
@@ -202,6 +205,10 @@ uv sync --extra dev --extra train
 cp .env.example .env
 ```
 
+Para desenvolvimento local não é preciso preencher nada: `APP_ENV=development`
+(padrão) usa segredos de placeholder e a aplicação sobe normalmente. Para rodar
+via Docker, veja **Segredos e ambientes** abaixo.
+
 ### Primeira execução (ordem recomendada)
 
 O treino usa `MLFLOW_TRACKING_URI=http://localhost:5001`.  
@@ -229,6 +236,40 @@ pip install -e ".[dev,train]"
 ```bash
 uv run python -c "from src.utils.config import settings; print('Seed:', settings.seed)"
 # Saída esperada: Seed: 42
+```
+
+### Segredos e ambientes
+
+`APP_ENV` decide se a aplicação aceita os segredos de desenvolvimento:
+
+| Valor | Comportamento | Uso |
+| --- | --- | --- |
+| `development` (padrão) | Aceita os placeholders versionados (`dev-insecure-*`). Sobe sem `.env`. | Local, testes, CI |
+| `production` | Recusa subir se `JWT_SECRET_KEY` ou `API_KEY` continuarem no padrão. | Docker, deploy |
+
+Os placeholders são públicos por definição — estão no repositório. Servem apenas
+para que o projeto rode sem configuração; não são segredos.
+
+O `docker-compose.yml` define `APP_ENV=production`, então subir os containers
+exige um `.env` na raiz com os dois valores preenchidos:
+
+```bash
+cp .env.example .env
+printf 'JWT_SECRET_KEY=%s\nAPI_KEY=%s\n' \
+  "$(openssl rand -hex 32)" "$(openssl rand -hex 16)" >> .env
+
+docker compose config >/dev/null && echo "compose OK"
+```
+
+Sem isso, o compose falha antes do build, com a variável faltante nomeada. Para
+verificar a proteção sem alterar seu `.env`:
+
+```bash
+APP_ENV=production \
+JWT_SECRET_KEY=dev-insecure-jwt-secret-change-me \
+API_KEY=dev-insecure-api-key-change-me \
+uv run python -c "from src.utils.config import settings"
+# ValidationError: APP_ENV=production exige segredos reais. JWT_SECRET_KEY não foi definida...
 ```
 
 ### Dataset
@@ -284,7 +325,7 @@ não mudaram.
 
 | Estágio      | Comando                                | Saídas                                                        |
 | ------------ | -------------------------------------- | ------------------------------------------------------------- |
-| `preprocess` | `uv run python -m src.pipeline.preprocess` | `data/processed/splits.joblib`, `models/preprocessor.joblib` |
+| `preprocess` | `uv run python -m src.pipeline.preprocess` | `data/processed/splits.joblib`, `models/preprocessor.joblib`, `models/reference_stats.npz` |
 | `train`      | `uv run python -m src.training.train`  | `models/best_baseline.joblib`, `mlp_model.pt`, `model_config.json` |
 
 
@@ -421,8 +462,8 @@ padrão pode ser verificado.
 | **Factory Method** | `src/data/preprocessing.py` → `build_full_pipeline()`, `_build_preprocessor()` | Construção do pipeline centralizada em um ponto. Treino e serving obtêm exatamente a mesma topologia de transformações. |
 | **Adapter** | `src/features/engineering.py` → `FeatureEngineerTransformer` | Adapta `add_features()` — função pura sobre `DataFrame` — ao protocolo `fit/transform` do scikit-learn, tornando-a plugável em `Pipeline` sem duplicar a lógica. |
 | **Composite** | `sklearn.Pipeline` + estágios de `dvc.yaml` | Uma etapa isolada e uma sequência de etapas expõem a mesma interface. O `Pipeline` do champion contém pré-processamento **e** classificador, e é tratado como um único estimador. |
-| **Repository** | `src/api/model_loader.py` → `ModelRepository` (Protocol) / `LocalModelRepository` | Abstrai a origem dos artefatos de modelo. Trocar filesystem local por MLflow Model Registry exige uma nova implementação do Protocol, não uma alteração na API. |
-| **Dependency Injection / DIP** | `src/api/app.py` → `lifespan()` e `Depends(_require_model)` | A aplicação depende da abstração (`ModelRepository`), nunca da implementação concreta. O FastAPI resolve `PredictionService` por injeção em cada requisição. |
+| **Repository** | `src/api/model_loader.py` → `ModelRepository` (Protocol) / `LocalModelRepository` | Abstrai a origem dos artefatos de modelo. A API conhece apenas o Protocol. |
+| **Dependency Injection / DIP** | `src/api/app.py` → `lifespan()` e `Depends(_require_model)`; `model_loader.build_model_repository()` | A escolha da implementação concreta vive numa factory, fora do consumidor — trocar a origem dos artefatos (por exemplo, para o Model Registry) não altera `app.py`. O FastAPI resolve `PredictionService` por injeção em cada requisição. |
 | **Facade** | `src/api/prediction_service.py` → `PredictionService` | Um único `predict()` encapsula transformação, inferência e classificação de risco. Os endpoints não conhecem nenhuma dessas etapas. |
 
 ### Padrões de Machine Learning
@@ -437,16 +478,15 @@ Referência: *Machine Learning Design Patterns* (Lakshmanan, Robinson & Munn, O'
 | **Model Versioning** | `src/models/registry.py` → `log_and_register_champion()`, `load_champion()` | Versões imutáveis no Model Registry com o alias `@champion` como ponteiro móvel. Consumidores resolvem `models:/churn-classifier@champion` sem conhecer o número da versão. |
 | **Rebalancing** | `class_weight="balanced"` (LogReg, RF) e `pos_weight` no `BCEWithLogitsLoss` — `src/models/mlp.py` → `train_mlp()` | Compensa o desbalanceamento da classe minoritária (churn) no cálculo da loss, em vez de reamostrar os dados. Consequência assumida: recall alto e precision menor, adequado ao caso de uso de retenção. |
 | **Checkpoints** | `src/models/mlp.py` → `EarlyStopping.best_state`, restaurado ao fim de `train_mlp()` | Os pesos salvos são os da melhor época por validation loss, não os da última. Evita persistir um modelo já em sobreajuste. |
-| **Stateless Serving Function** | `src/api/app.py` → `lifespan()` | Preprocessor e modelo são carregados uma vez na inicialização e mantidos em memória; os endpoints não guardam estado entre requisições, o que permite escalar horizontalmente por réplicas. |
+| **Continued Model Evaluation** | `src/monitoring/drift_detection.py` (KS-test, PSI); referência persistida em `models/reference_stats.npz` por `preprocess.save_reference_stats_for_drift()`; thresholds e ações em `docs/monitoring_plan.md` | A distribuição de treino é versionada como artefato do pipeline, permitindo comparar dados de produção contra a referência que originou o modelo. Fairness é verificada em `tests/test_fairness.py` (fairlearn). |
+| **Stateless Serving Function** | `src/api/app.py` → `lifespan()` | Preprocessor e modelo são carregados uma vez na inicialização e o caminho de inferência não guarda estado entre requisições. Ressalva assumida: rate limiting (`security.py` → `_request_history`) e o repositório de usuários permanecem em memória do processo, o que limita a escala horizontal enquanto não forem externalizados. |
 
 ### Padrões avaliados e deliberadamente fora de escopo
 
 | Padrão | Decisão |
 | --- | --- |
-| **Repeatable Splitting** | O split estratificado com seed fixo em `params.yaml` já garante reprodutibilidade para um dataset estático. A variante canônica (hash sobre chave estável) pressupõe dados incrementais e uma chave preservada — o `customer_id` é descartado em `clean_data()` por não ser feature. |
+| **Repeatable Splitting** | A reprodutibilidade é garantida em dois níveis: seed fixo em `params.yaml` e hash do dataset fixado no `dvc.lock`, o que reproduz o split exato a partir do artefato, não apenas do gerador aleatório. A variante canônica (hash sobre chave estável) pressupõe dados incrementais e uma chave preservada — o `customer_id` é descartado em `clean_data()` por não ser feature. |
 | **Feature Store** | Não há reuso de features entre projetos nem exigência de serving em baixa latência a partir de um store. A serialização do preprocessor atende ao requisito de consistência com custo operacional muito menor. |
-| **Continued Model Evaluation** | A avaliação de fairness roda como teste automatizado (`tests/test_fairness.py`, fairlearn), não como monitoramento contínuo em produção. Detecção de drift está disponível como utilitário em `src/monitoring/drift_detection.py`, ainda não acoplada ao ciclo de serving. |
-
 
 ---
 
@@ -481,7 +521,7 @@ curl -X POST http://localhost:8000/predict \
 
 ```bash
 curl -X POST http://localhost:8000/predict-apikey \
-  -H "X-API-Key: churn-api-key-fiap-2026" \
+  -H "X-API-Key: $API_KEY" \  # em desenvolvimento: dev-insecure-api-key-change-me
   -H "Content-Type: application/json" \
   -d '{...payload...}'
 ```
@@ -608,15 +648,20 @@ Todas as respostas incluem os headers:
 ```bash
 docker build -t churn-prediction:latest .
 docker run -p 8000:8000 \
-  -e JWT_SECRET_KEY=<sua-chave> \
-  -e API_KEY=<sua-api-key> \
+  -e APP_ENV=production \
+  -e JWT_SECRET_KEY=$(openssl rand -hex 32) \
+  -e API_KEY=$(openssl rand -hex 16) \
   churn-prediction:latest
 ```
+
+Com `APP_ENV=production`, a aplicação recusa iniciar se algum segredo continuar
+no valor de desenvolvimento — ver **Segredos e ambientes**.
 
 ### Stack completa com MLflow, Prometheus e Grafana
 
 ```bash
-docker-compose up -d
+# exige .env na raiz com JWT_SECRET_KEY e API_KEY preenchidos
+docker compose up -d
 ```
 
 
@@ -652,7 +697,7 @@ O Dockerfile usa cache do uv (`--mount=type=cache`) para otimizar builds:
 
 | Workflow | Trigger           | O que faz                        |
 | -------- | ----------------- | -------------------------------- |
-| `ci.yml` | Todo push e PR    | Lint (ruff) + 58 testes (pytest) |
+| `ci.yml` | Todo push e PR    | Lint (ruff) + 75 testes (pytest) |
 | `cd.yml` | Merge para `main` | Build Docker + push para GHCR    |
 
 
@@ -706,8 +751,9 @@ sklearn conforme o escopo da Fase 2; a MLP permanece rastreada no MLflow Trackin
 
 ## 🧪 Testes
 
-58 testes passando, cobrindo: smoke, schema (pandera), API (JWT + API Key + batch),
-model, preprocessing, fairness e Model Registry.
+75 testes passando, cobrindo: smoke, schema (pandera), API (JWT + API Key + batch),
+model, preprocessing, fairness, Model Registry, configuração/segredos e aderência
+aos padrões documentados.
 
 ```bash
 make test
@@ -719,6 +765,10 @@ Os testes do Registry (`tests/test_registry.py`) usam um backend SQLite temporá
 por teste — exercitam a API real do MLflow sem exigir um servidor de tracking ativo,
 o que os mantém executáveis em CI.
 
+`tests/test_config.py` isola cada caso com `_env_file=None`, garantindo que a
+recusa de segredos em produção seja verificada independentemente do `.env` da
+máquina que roda a suíte.
+
 > Sem o dataset em `data/raw/`, seis testes de schema são **pulados** e a suíte
 > ainda reporta sucesso. Use `uv run pytest -rs` para ver os skips.
 
@@ -728,7 +778,8 @@ o que os mantém executáveis em CI.
 | Warning                                     | Origem                       | Status                                                   |
 | ------------------------------------------- | ---------------------------- | -------------------------------------------------------- |
 | `DeprecationWarning: 'crypt' is deprecated` | `passlib` (lib de terceiros) | Aguardando correção upstream                             |
-| `DeprecationWarning: datetime.utcnow()`     | `src/api/security.py`        | Corrigido — substituído por `datetime.now(timezone.utc)` |
+| `DeprecationWarning: datetime.utcnow()`     | `src/api/security.py`        | Corrigido — substituído por `datetime.now(UTC)`          |
+| `FutureWarning: import pandera as pa`       | `src/data/schema.py`         | Pendente — o caminho novo é `pandera.pandas`             |
 
 
 ---
@@ -785,8 +836,13 @@ o que os mantém executáveis em CI.
 | 2     | MLflow Model Registry: promoção do melhor baseline com alias `@champion`                      | ✅ Concluída   |
 | +     | Assinatura inferida + `input_example` (colunas inteiras como float, tolerante a nulos)        | ✅ Concluída   |
 | +     | 6 testes do Registry com backend SQLite isolado                                               | ✅ Concluída   |
-| 3     | Dependências / `.env` / Docker                                                                | 🔲 Pendente    |
-| 4     | README + vídeo STAR                                                                           | 🔲 Pendente    |
+| 3     | Dependências / `.env` / Docker                                                                | ✅ Concluída   |
+| +     | `APP_ENV`: segredo separado de configuração, com recusa de placeholder em produção            | ✅ Concluída   |
+| +     | Factory do repositório de modelo (`build_model_repository`) — ponto único de troca            | ✅ Concluída   |
+| +     | Estatísticas de referência para detecção de drift (`models/reference_stats.npz`)              | ✅ Concluída   |
+| +     | 15 testes novos (configuração e aderência aos padrões documentados)                           | ✅ Concluída   |
+| 4     | README + vídeo STAR                                                                           | 🔶 Parcial     |
+| +     | Seção de padrões de projeto (GoF + ML), ancorada em arquivo e símbolo                         | ✅ Concluída   |
 | 5     | Ajustes de `metrics.json` e `.gitignore`                                                      | 🔲 Pendente    |
 | —     | Migrar remote do DVC para storage compartilhado (desbloqueia o CD)                            | 🔲 Pendente    |
 

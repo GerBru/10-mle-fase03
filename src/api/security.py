@@ -4,7 +4,7 @@ Segurança da API: JWT, API Key, rate limiting e repositório de usuários.
 
 import time
 from collections import defaultdict, deque
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import bcrypt
 from fastapi import Depends, Header, HTTPException, status
@@ -13,12 +13,12 @@ from jose import JWTError, jwt
 
 from src.utils.config import settings
 
-JWT_SECRET_KEY = getattr(settings, "jwt_secret_key", "churn-secret-key-fiap-tech-challenge-2026")
+JWT_SECRET_KEY = settings.jwt_secret_key
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRE_MINUTES = 60
-API_KEY = getattr(settings, "api_key", "churn-api-key-fiap-2026")
-RATE_LIMIT_REQUESTS = getattr(settings, "rate_limit_requests", 100)
-RATE_LIMIT_WINDOW = getattr(settings, "rate_limit_window", 60)
+JWT_EXPIRE_MINUTES = settings.jwt_expire_minutes
+API_KEY = settings.api_key
+RATE_LIMIT_REQUESTS = settings.rate_limit_requests
+RATE_LIMIT_WINDOW = settings.rate_limit_window
 
 http_bearer = HTTPBearer(auto_error=False)
 
@@ -46,7 +46,7 @@ class InMemoryUserRepository:
 
 
 def create_access_token(username: str, role: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=JWT_EXPIRE_MINUTES)
+    expire = datetime.now(UTC) + timedelta(minutes=JWT_EXPIRE_MINUTES)
     payload = {"sub": username, "role": role, "exp": expire}
     return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
 

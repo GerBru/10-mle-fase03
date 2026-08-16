@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 import src.api.app as app_module
 from src.api.app import app
-from src.api.security import create_access_token
+from src.api.security import API_KEY, create_access_token
 from src.models.mlp import ChurnMLP
 
 VALID_PAYLOAD = {
@@ -145,7 +145,7 @@ def test_predict_apikey_valid(client):
     response = client.post(
         "/predict-apikey",
         json=VALID_PAYLOAD,
-        headers={"X-API-Key": "churn-api-key-fiap-2026"},
+        headers={"X-API-Key": API_KEY},
     )
     assert response.status_code == 200
     data = response.json()

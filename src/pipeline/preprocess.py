@@ -22,8 +22,10 @@ from src.data.preprocessing import (
     split_data,
 )
 from src.data.schema import validate_raw
+from src.monitoring.drift_detection import save_reference_stats
 from src.utils import settings
 from src.utils.logger import get_logger
+from sklearn.exceptions import NotFittedError
 
 logger = get_logger(__name__)
 
@@ -65,6 +67,40 @@ def build_splits(df: pd.DataFrame) -> dict:
     }
 
 
+def _feature_names(pipeline, n_features: int) -> list[str]:
+    """Nomes das colunas após a transformação, com degradação em três níveis.
+
+    `Pipeline.get_feature_names_out()` exige que todos os passos implementem o
+    método, e `FeatureEngineerTransformer` não implementa. O `ColumnTransformer`
+    final implementa e é quem define o layout real da matriz de saída, então ele
+    é a fonte correta. O fallback posicional mantém o artefato utilizável caso a
+    topologia do pipeline mude.
+    """
+    for fonte in (pipeline, pipeline[-1] if hasattr(pipeline, "__getitem__") else None):
+        if fonte is None:
+            continue
+        try:
+            return [str(name) for name in fonte.get_feature_names_out()]
+        except (AttributeError, ValueError, NotFittedError):
+            continue
+
+    logger.warning("Nomes de features indisponíveis — usando nomes posicionais.")
+    return [f"feature_{i}" for i in range(n_features)]
+
+
+def save_reference_stats_for_drift(splits: dict) -> None:
+    """Persiste a distribuição do treino como referência para detecção de drift.
+
+    Sem este artefato, `src/monitoring/drift_detection.py` não tem contra o quê
+    comparar os dados de produção — as funções `ks_test` e `psi` exigem uma
+    amostra de referência. É o que torna o plano descrito em
+    `docs/monitoring_plan.md` executável.
+    """
+    X_train = splits["X_train"]
+    feature_names = _feature_names(splits["pipeline"], X_train.shape[1])
+    save_reference_stats(X_train, feature_names, str(MODELS_DIR / "reference_stats.npz"))
+
+
 def save_artifacts(splits: dict) -> None:
     """Persiste o preprocessor ajustado e os splits processados em disco."""
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
@@ -75,6 +111,7 @@ def save_artifacts(splits: dict) -> None:
         {k: v for k, v in splits.items() if k != "pipeline"},
         PROCESSED_DIR / "splits.joblib",
     )
+    save_reference_stats_for_drift(splits)
     logger.info("Saved preprocessor.joblib and data/processed/splits.joblib")
 
 
