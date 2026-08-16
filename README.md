@@ -73,7 +73,9 @@ boas práticas de Machine Learning Engineering:
 │       └── logger.py            # Logging estruturado (loguru)
 ├── tests/
 │   ├── test_api.py              # Testes da API FastAPI (com JWT)
+│   ├── test_config.py           # Separação entre segredo e configuração (APP_ENV)
 │   ├── test_fairness.py         # Testes de fairness (Fairlearn MetricFrame)
+│   ├── test_patterns_adherence.py  # Aderência aos padrões documentados
 │   ├── test_model.py            # Testes do MLP PyTorch
 │   ├── test_preprocessing.py    # Testes de pré-processamento
 │   ├── test_registry.py         # Testes do Model Registry (backend SQLite isolado)
@@ -91,6 +93,7 @@ boas práticas de Machine Learning Engineering:
 │   ├── mlp_model.pt             # checkpoint PyTorch
 │   ├── model_config.json        # input_dim e metadados do MLP
 │   ├── preprocessor.joblib      # pipeline sklearn de pré-processamento
+│   ├── reference_stats.npz      # distribuição de treino (referência p/ drift)
 │   └── results.json             # métricas rastreadas pelo DVC
 ├── monitoring/                  # stack de observabilidade local (docker-compose)
 │   ├── prometheus.yml           # scrape da API (/metrics)
@@ -168,7 +171,7 @@ A documentação completa do projeto está organizada em `docs/` e no módulo de
 - [uv](https://docs.astral.sh/uv/) — gerenciador de pacotes
 - Git
 - Make (opcional, mas recomendado)
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (necessário apenas para `docker-compose up`)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (necessário apenas para `docker compose up`)
 
 ### Instalação do uv
 
@@ -322,7 +325,7 @@ não mudaram.
 
 | Estágio      | Comando                                | Saídas                                                        |
 | ------------ | -------------------------------------- | ------------------------------------------------------------- |
-| `preprocess` | `uv run python -m src.pipeline.preprocess` | `data/processed/splits.joblib`, `models/preprocessor.joblib` |
+| `preprocess` | `uv run python -m src.pipeline.preprocess` | `data/processed/splits.joblib`, `models/preprocessor.joblib`, `models/reference_stats.npz` |
 | `train`      | `uv run python -m src.training.train`  | `models/best_baseline.joblib`, `mlp_model.pt`, `model_config.json` |
 
 
@@ -645,15 +648,20 @@ Todas as respostas incluem os headers:
 ```bash
 docker build -t churn-prediction:latest .
 docker run -p 8000:8000 \
-  -e JWT_SECRET_KEY=<sua-chave> \
-  -e API_KEY=<sua-api-key> \
+  -e APP_ENV=production \
+  -e JWT_SECRET_KEY=$(openssl rand -hex 32) \
+  -e API_KEY=$(openssl rand -hex 16) \
   churn-prediction:latest
 ```
+
+Com `APP_ENV=production`, a aplicação recusa iniciar se algum segredo continuar
+no valor de desenvolvimento — ver **Segredos e ambientes**.
 
 ### Stack completa com MLflow, Prometheus e Grafana
 
 ```bash
-docker-compose up -d
+# exige .env na raiz com JWT_SECRET_KEY e API_KEY preenchidos
+docker compose up -d
 ```
 
 
@@ -689,7 +697,7 @@ O Dockerfile usa cache do uv (`--mount=type=cache`) para otimizar builds:
 
 | Workflow | Trigger           | O que faz                        |
 | -------- | ----------------- | -------------------------------- |
-| `ci.yml` | Todo push e PR    | Lint (ruff) + 58 testes (pytest) |
+| `ci.yml` | Todo push e PR    | Lint (ruff) + 75 testes (pytest) |
 | `cd.yml` | Merge para `main` | Build Docker + push para GHCR    |
 
 
@@ -743,8 +751,9 @@ sklearn conforme o escopo da Fase 2; a MLP permanece rastreada no MLflow Trackin
 
 ## 🧪 Testes
 
-58 testes passando, cobrindo: smoke, schema (pandera), API (JWT + API Key + batch),
-model, preprocessing, fairness e Model Registry.
+75 testes passando, cobrindo: smoke, schema (pandera), API (JWT + API Key + batch),
+model, preprocessing, fairness, Model Registry, configuração/segredos e aderência
+aos padrões documentados.
 
 ```bash
 make test
@@ -756,6 +765,10 @@ Os testes do Registry (`tests/test_registry.py`) usam um backend SQLite temporá
 por teste — exercitam a API real do MLflow sem exigir um servidor de tracking ativo,
 o que os mantém executáveis em CI.
 
+`tests/test_config.py` isola cada caso com `_env_file=None`, garantindo que a
+recusa de segredos em produção seja verificada independentemente do `.env` da
+máquina que roda a suíte.
+
 > Sem o dataset em `data/raw/`, seis testes de schema são **pulados** e a suíte
 > ainda reporta sucesso. Use `uv run pytest -rs` para ver os skips.
 
@@ -765,7 +778,8 @@ o que os mantém executáveis em CI.
 | Warning                                     | Origem                       | Status                                                   |
 | ------------------------------------------- | ---------------------------- | -------------------------------------------------------- |
 | `DeprecationWarning: 'crypt' is deprecated` | `passlib` (lib de terceiros) | Aguardando correção upstream                             |
-| `DeprecationWarning: datetime.utcnow()`     | `src/api/security.py`        | Corrigido — substituído por `datetime.now(timezone.utc)` |
+| `DeprecationWarning: datetime.utcnow()`     | `src/api/security.py`        | Corrigido — substituído por `datetime.now(UTC)`          |
+| `FutureWarning: import pandera as pa`       | `src/data/schema.py`         | Pendente — o caminho novo é `pandera.pandas`             |
 
 
 ---
@@ -822,8 +836,13 @@ o que os mantém executáveis em CI.
 | 2     | MLflow Model Registry: promoção do melhor baseline com alias `@champion`                      | ✅ Concluída   |
 | +     | Assinatura inferida + `input_example` (colunas inteiras como float, tolerante a nulos)        | ✅ Concluída   |
 | +     | 6 testes do Registry com backend SQLite isolado                                               | ✅ Concluída   |
-| 3     | Dependências / `.env` / Docker                                                                | 🔲 Pendente    |
-| 4     | README + vídeo STAR                                                                           | 🔲 Pendente    |
+| 3     | Dependências / `.env` / Docker                                                                | ✅ Concluída   |
+| +     | `APP_ENV`: segredo separado de configuração, com recusa de placeholder em produção            | ✅ Concluída   |
+| +     | Factory do repositório de modelo (`build_model_repository`) — ponto único de troca            | ✅ Concluída   |
+| +     | Estatísticas de referência para detecção de drift (`models/reference_stats.npz`)              | ✅ Concluída   |
+| +     | 15 testes novos (configuração e aderência aos padrões documentados)                           | ✅ Concluída   |
+| 4     | README + vídeo STAR                                                                           | 🔶 Parcial     |
+| +     | Seção de padrões de projeto (GoF + ML), ancorada em arquivo e símbolo                         | ✅ Concluída   |
 | 5     | Ajustes de `metrics.json` e `.gitignore`                                                      | 🔲 Pendente    |
 | —     | Migrar remote do DVC para storage compartilhado (desbloqueia o CD)                            | 🔲 Pendente    |
 
