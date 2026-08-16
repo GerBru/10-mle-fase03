@@ -202,6 +202,10 @@ uv sync --extra dev --extra train
 cp .env.example .env
 ```
 
+Para desenvolvimento local não é preciso preencher nada: `APP_ENV=development`
+(padrão) usa segredos de placeholder e a aplicação sobe normalmente. Para rodar
+via Docker, veja **Segredos e ambientes** abaixo.
+
 ### Primeira execução (ordem recomendada)
 
 O treino usa `MLFLOW_TRACKING_URI=http://localhost:5001`.  
@@ -229,6 +233,40 @@ pip install -e ".[dev,train]"
 ```bash
 uv run python -c "from src.utils.config import settings; print('Seed:', settings.seed)"
 # Saída esperada: Seed: 42
+```
+
+### Segredos e ambientes
+
+`APP_ENV` decide se a aplicação aceita os segredos de desenvolvimento:
+
+| Valor | Comportamento | Uso |
+| --- | --- | --- |
+| `development` (padrão) | Aceita os placeholders versionados (`dev-insecure-*`). Sobe sem `.env`. | Local, testes, CI |
+| `production` | Recusa subir se `JWT_SECRET_KEY` ou `API_KEY` continuarem no padrão. | Docker, deploy |
+
+Os placeholders são públicos por definição — estão no repositório. Servem apenas
+para que o projeto rode sem configuração; não são segredos.
+
+O `docker-compose.yml` define `APP_ENV=production`, então subir os containers
+exige um `.env` na raiz com os dois valores preenchidos:
+
+```bash
+cp .env.example .env
+printf 'JWT_SECRET_KEY=%s\nAPI_KEY=%s\n' \
+  "$(openssl rand -hex 32)" "$(openssl rand -hex 16)" >> .env
+
+docker compose config >/dev/null && echo "compose OK"
+```
+
+Sem isso, o compose falha antes do build, com a variável faltante nomeada. Para
+verificar a proteção sem alterar seu `.env`:
+
+```bash
+APP_ENV=production \
+JWT_SECRET_KEY=dev-insecure-jwt-secret-change-me \
+API_KEY=dev-insecure-api-key-change-me \
+uv run python -c "from src.utils.config import settings"
+# ValidationError: APP_ENV=production exige segredos reais. JWT_SECRET_KEY não foi definida...
 ```
 
 ### Dataset
@@ -480,7 +518,7 @@ curl -X POST http://localhost:8000/predict \
 
 ```bash
 curl -X POST http://localhost:8000/predict-apikey \
-  -H "X-API-Key: churn-api-key-fiap-2026" \
+  -H "X-API-Key: $API_KEY" \  # em desenvolvimento: dev-insecure-api-key-change-me
   -H "Content-Type: application/json" \
   -d '{...payload...}'
 ```

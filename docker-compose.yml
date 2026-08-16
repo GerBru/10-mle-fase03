@@ -10,8 +10,8 @@ services:
       # O container roda como produção: sem segredos reais, a API recusa subir.
       # `:?` faz o compose falhar aqui, com mensagem clara, antes do build.
       - APP_ENV=${APP_ENV:-production}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?defina no .env — gere com: openssl rand -hex 32}
-      - API_KEY=${API_KEY:?defina no .env — gere com: openssl rand -hex 16}
+      - "JWT_SECRET_KEY=${JWT_SECRET_KEY:?defina no .env - gere com openssl rand -hex 32}"
+      - "API_KEY=${API_KEY:?defina no .env - gere com openssl rand -hex 16}"
       - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI:-http://mlflow:5000}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
