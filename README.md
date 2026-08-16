@@ -406,6 +406,50 @@ data/raw/Telco_customer_churn.csv (DVC)
 
 ---
 
+## 🧩 Padrões de Projeto
+
+Os padrões abaixo **não foram introduzidos para cumprir requisito** — descrevem o
+desenho já existente no código. Cada linha aponta o arquivo e o símbolo onde o
+padrão pode ser verificado.
+
+### Padrões clássicos (GoF)
+
+| Padrão | Onde | O que resolve |
+| --- | --- | --- |
+| **Strategy** | `src/models/baseline.py` → `build_baselines()` | Família de classificadores intercambiáveis atrás da mesma interface `fit/predict`. Adicionar ou remover um baseline não altera `src/training/train.py`. |
+| **Strategy** (parametrizado) | `src/api/prediction_service.py` → `RiskClassifier` | Thresholds de risco injetáveis via construtor. A regra de negócio fica isolada da inferência e testável sem carregar modelo. |
+| **Factory Method** | `src/data/preprocessing.py` → `build_full_pipeline()`, `_build_preprocessor()` | Construção do pipeline centralizada em um ponto. Treino e serving obtêm exatamente a mesma topologia de transformações. |
+| **Adapter** | `src/features/engineering.py` → `FeatureEngineerTransformer` | Adapta `add_features()` — função pura sobre `DataFrame` — ao protocolo `fit/transform` do scikit-learn, tornando-a plugável em `Pipeline` sem duplicar a lógica. |
+| **Composite** | `sklearn.Pipeline` + estágios de `dvc.yaml` | Uma etapa isolada e uma sequência de etapas expõem a mesma interface. O `Pipeline` do champion contém pré-processamento **e** classificador, e é tratado como um único estimador. |
+| **Repository** | `src/api/model_loader.py` → `ModelRepository` (Protocol) / `LocalModelRepository` | Abstrai a origem dos artefatos de modelo. Trocar filesystem local por MLflow Model Registry exige uma nova implementação do Protocol, não uma alteração na API. |
+| **Dependency Injection / DIP** | `src/api/app.py` → `lifespan()` e `Depends(_require_model)` | A aplicação depende da abstração (`ModelRepository`), nunca da implementação concreta. O FastAPI resolve `PredictionService` por injeção em cada requisição. |
+| **Facade** | `src/api/prediction_service.py` → `PredictionService` | Um único `predict()` encapsula transformação, inferência e classificação de risco. Os endpoints não conhecem nenhuma dessas etapas. |
+
+### Padrões de Machine Learning
+
+Referência: *Machine Learning Design Patterns* (Lakshmanan, Robinson & Munn, O'Reilly).
+
+| Padrão | Onde | O que resolve |
+| --- | --- | --- |
+| **Heuristic Benchmark** | `DummyClassifier` em `build_baselines()` | Estabelece o piso de referência (AUC-ROC 0.5163) contra o qual todo ganho dos modelos reais é medido. Sem ele, "0.85 de AUC" é um número sem escala. |
+| **Transform** | Pipelines autocontidos em `build_baselines()`; `models/preprocessor.joblib` reaplicado em `PredictionService.predict()` | A transformação é persistida junto do modelo e reaplicada idêntica em serving, eliminando *training-serving skew*. O modelo do Registry prediz diretamente sobre dados crus. |
+| **Workflow Pipeline** | `dvc.yaml` (`preprocess` → `train`), `dvc.lock`, `params.yaml` | Etapas versionadas, cacheadas e reexecutáveis isoladamente. Alterar um hiperparâmetro em `params.yaml` invalida apenas o estágio afetado. |
+| **Model Versioning** | `src/models/registry.py` → `log_and_register_champion()`, `load_champion()` | Versões imutáveis no Model Registry com o alias `@champion` como ponteiro móvel. Consumidores resolvem `models:/churn-classifier@champion` sem conhecer o número da versão. |
+| **Rebalancing** | `class_weight="balanced"` (LogReg, RF) e `pos_weight` no `BCEWithLogitsLoss` — `src/models/mlp.py` → `train_mlp()` | Compensa o desbalanceamento da classe minoritária (churn) no cálculo da loss, em vez de reamostrar os dados. Consequência assumida: recall alto e precision menor, adequado ao caso de uso de retenção. |
+| **Checkpoints** | `src/models/mlp.py` → `EarlyStopping.best_state`, restaurado ao fim de `train_mlp()` | Os pesos salvos são os da melhor época por validation loss, não os da última. Evita persistir um modelo já em sobreajuste. |
+| **Stateless Serving Function** | `src/api/app.py` → `lifespan()` | Preprocessor e modelo são carregados uma vez na inicialização e mantidos em memória; os endpoints não guardam estado entre requisições, o que permite escalar horizontalmente por réplicas. |
+
+### Padrões avaliados e deliberadamente fora de escopo
+
+| Padrão | Decisão |
+| --- | --- |
+| **Repeatable Splitting** | O split estratificado com seed fixo em `params.yaml` já garante reprodutibilidade para um dataset estático. A variante canônica (hash sobre chave estável) pressupõe dados incrementais e uma chave preservada — o `customer_id` é descartado em `clean_data()` por não ser feature. |
+| **Feature Store** | Não há reuso de features entre projetos nem exigência de serving em baixa latência a partir de um store. A serialização do preprocessor atende ao requisito de consistência com custo operacional muito menor. |
+| **Continued Model Evaluation** | A avaliação de fairness roda como teste automatizado (`tests/test_fairness.py`, fairlearn), não como monitoramento contínuo em produção. Detecção de drift está disponível como utilitário em `src/monitoring/drift_detection.py`, ainda não acoplada ao ciclo de serving. |
+
+
+---
+
 ## 🔐 Autenticação da API
 
 ### JWT (usuários autenticados)
