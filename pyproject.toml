@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "telco-churn"
 version = "0.1.0"
 description = "Telco Customer Churn Prediction — FIAP 10MLET Tech Challenge"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 # Dependencias de RUNTIME (API de inferencia). Mantidas enxutas para a imagem
 # Docker/AWS: ver libs de treino/EDA em [project.optional-dependencies].train.
 dependencies = [
@@ -37,7 +37,9 @@ dependencies = [
 # Instale localmente com: uv sync --extra train
 train = [
     "imbalanced-learn>=0.12",
-    "mlflow>=2.10",
+    # >=3.0: src/models/registry.py depende da semantica de model_info.model_uri
+    # do MLflow 3 (models:/m-<id>). Resolver 2.x quebra a promocao do champion.
+    "mlflow>=3.0",
     "openpyxl>=3.1",
     "pandera>=0.18",
     "matplotlib>=3.8",
@@ -65,7 +67,7 @@ include = ["src*"]
 
 [tool.ruff]
 line-length = 88
-target-version = "py310"
+target-version = "py312"
 exclude = ["notebooks/"]
 
 [tool.ruff.lint]
