@@ -45,6 +45,8 @@ train = [
     "matplotlib>=3.8",
     "seaborn>=0.13",
     "dvc>=3.55",
+    # Remote do DVC no Google Drive (autenticacao via service account).
+    "dvc-gdrive>=3.0",
     "pyyaml>=6.0",
 ]
 dev = [

@@ -39,6 +39,11 @@ notebooks/logs/
 !.env.example
 *.env
 
+# DVC — chave da service account do Google Drive (NUNCA commitar)
+.dvc/tmp/
+gdrive-service-account.json
+*service-account*.json
+
 # IDE
 .vscode/
 .idea/
