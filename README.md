@@ -275,19 +275,42 @@ uv run python -c "from src.utils.config import settings"
 ### Dataset
 
 O dataset é versionado com DVC — o git rastreia apenas o ponteiro
-`data/raw/Telco_customer_churn.csv.dvc`. Para recuperar o arquivo:
+`data/raw/Telco_customer_churn.csv.dvc`. O remote é o **Google Drive**,
+autenticado por **service account** (compartilhável entre o grupo e utilizável no
+CI, sem fluxo de navegador).
 
-```bash
-uv run dvc pull
-```
+**Setup do remote (uma vez por máquina):**
 
-> **Limitação conhecida:** o remote configurado é local (`../dvc-storage-fase2`),
-> um caminho relativo que só existe na máquina de quem versionou os dados.
-> `dvc pull` falhará para os demais integrantes e no runner de CI. Enquanto o
-> remote não migrar para um storage compartilhado (ex.: S3), baixe o dataset
+1. **Crie a service account** no [Google Cloud Console](https://console.cloud.google.com/)
+   (IAM & Admin → Service Accounts), habilite a **Google Drive API** no projeto e
+   gere uma **chave JSON**. Salve como `gdrive-service-account.json` na raiz do
+   projeto (já está no `.gitignore` — **não commite**).
+2. **Compartilhe a pasta do Drive** (a mesma do `url = gdrive://<FOLDER_ID>` em
+   `.dvc/config`) com o **e-mail da service account** (algo como
+   `...@...iam.gserviceaccount.com`), com permissão de *Editor*.
+3. **Aponte o DVC para a chave** (grava em `.dvc/config.local`, fora do git):
+
+   ```bash
+   make dvc-setup                       # usa gdrive-service-account.json por padrão
+   # ou, com caminho customizado:
+   # make dvc-setup GDRIVE_SA_JSON=/caminho/para/chave.json
+   ```
+
+4. **Baixe os dados versionados:**
+
+   ```bash
+   uv run dvc pull   # dataset + artefatos do Google Drive
+   ```
+
+> **Fallback sem o remote:** se ainda não tiver acesso à service account, reidrate
+> o dataset baixando
 > [Telco Customer Churn (IBM)](https://www.kaggle.com/datasets/yeanzc/telco-customer-churn-ibm-dataset)
-> manualmente para `data/raw/Telco_customer_churn.csv` e rode `uv run dvc status`
-> para confirmar que o hash confere.
+> manualmente para `data/raw/Telco_customer_churn.csv` e valide o hash:
+>
+> ```bash
+> uv run dvc commit data/raw/Telco_customer_churn.csv.dvc  # registra no cache
+> uv run dvc status   # deve reportar "up to date" (md5 63936da3…)
+> ```
 
 Sem o dataset, seis testes de `test_schema.py` são pulados silenciosamente
 (`pytest -rs` mostra o motivo).
@@ -302,7 +325,9 @@ Sem o dataset, seis testes de `test_schema.py` são pulados silenciosamente
 | `make install`   | Instala dependências de desenvolvimento (`--extra dev`)                       |
 | `make mlflow-ui` | Abre o MLflow UI em `http://localhost:5001`*                                  |
 | `make train`     | Treina baselines + MLP, loga no MLflow, salva artefatos (requer MLflow ativo) |
-| `uv run dvc repro` | Reproduz o pipeline completo (`preprocess` → `train`), pulando estágios sem mudança |
+| `make dvc-setup` | Aponta o remote do Google Drive para a chave da service account (`.dvc/config.local`) |
+| `make repro`     | Reproduz o pipeline completo (`preprocess` → `train`), pulando estágios sem mudança |
+| `make dvc-push`  | Envia os artefatos versionados para o Google Drive                            |
 | `uv run dvc status` | Mostra quais estágios estão desatualizados                                 |
 | `make run`       | Sobe a API FastAPI em `http://localhost:8000`                                 |
 | `make test`      | Roda todos os testes com pytest                                               |
@@ -341,13 +366,17 @@ train:
 ```
 
 ```bash
-# Terminal 1: MLflow precisa estar ativo — o estágio train registra runs
+# Terminal 1: MLflow precisa estar ativo — o estágio train registra runs no Registry
 make mlflow-ui
+# Alternativa sem servidor: exporte um backend SQLite (suporta Model Registry)
+# export MLFLOW_TRACKING_URI=sqlite:///mlflow.db
 
 # Terminal 2
-uv run dvc repro          # roda apenas o que mudou
+make dvc-setup            # configura a chave da service account do Google Drive
+make repro                # = uv run dvc repro — roda apenas o que mudou
 uv run dvc repro -f train # força a reexecução do treino
 uv run dvc metrics show   # exibe models/results.json
+make dvc-push             # publica os artefatos no Google Drive
 ```
 
 > `models/results.json` é declarado como métrica com `cache: false`, então fica
