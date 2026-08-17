@@ -275,12 +275,26 @@ uv run python -c "from src.utils.config import settings"
 ### Dataset
 
 O dataset é versionado com DVC — o git rastreia apenas o ponteiro
-`data/raw/Telco_customer_churn.csv.dvc`. O remote é o **Google Drive**
-(`url = gdrive://<FOLDER_ID>` em `.dvc/config`), autenticado por **OAuth**
-(login no navegador; os arquivos ficam na cota do usuário — funciona em conta
-Google pessoal, onde *service accounts* não têm cota).
+`data/raw/Telco_customer_churn.csv.dvc`. O projeto define **dois remotes** em
+`.dvc/config`:
 
-**Setup do remote (uma vez por máquina):**
+| Remote   | Onde                                   | Uso                                              |
+| -------- | -------------------------------------- | ------------------------------------------------ |
+| `local` (padrão) | Pasta local (`../dvc-storage-fase2`)   | Rápido e offline, só na sua máquina              |
+| `gdrive` | Google Drive (`gdrive://<FOLDER_ID>`), OAuth | Compartilhável entre o grupo                     |
+
+**Escolha o remote ativo** (grava em `.dvc/config.local`, fora do git — não suja
+o config versionado; `dvc push`/`pull` passam a usar o escolhido):
+
+```bash
+make dvc-use-local    # usar a pasta local (padrão)
+make dvc-use-gdrive   # usar Google Drive
+```
+
+O `gdrive` usa **OAuth** (login no navegador; os arquivos ficam na cota do
+usuário — funciona em conta Google pessoal, onde *service accounts* não têm cota).
+
+**Setup do remote Google Drive (uma vez por máquina):**
 
 1. **Crie um OAuth Client** no [Google Cloud Console](https://console.cloud.google.com/)
    → **APIs & Services**:
@@ -298,10 +312,10 @@ Google pessoal, onde *service accounts* não têm cota).
    make dvc-setup GDRIVE_CLIENT_ID=<id> GDRIVE_CLIENT_SECRET=<secret>
    ```
 
-4. **Baixe os dados versionados** (abre o navegador para autorizar na 1ª vez):
+4. **Baixe os dados versionados** (com `gdrive` ativo, abre o navegador na 1ª vez):
 
    ```bash
-   uv run dvc pull   # dataset + artefatos do Google Drive
+   uv run dvc pull   # ou: make dvc-pull — usa o remote ativo
    ```
 
 > **CI:** o fluxo OAuth é interativo (navegador), então não roda *headless* no
@@ -332,8 +346,9 @@ Sem o dataset, seis testes de `test_schema.py` são pulados silenciosamente
 | `make mlflow-ui` | Abre o MLflow UI em `http://localhost:5001`*                                  |
 | `make train`     | Treina baselines + MLP, loga no MLflow, salva artefatos (requer MLflow ativo) |
 | `make dvc-setup` | Grava as credenciais OAuth do Google Drive em `.dvc/config.local` (`GDRIVE_CLIENT_ID`/`GDRIVE_CLIENT_SECRET`) |
+| `make dvc-use-gdrive` / `make dvc-use-local` | Escolhe o remote ativo (Google Drive ou pasta local) |
 | `make repro`     | Reproduz o pipeline completo (`preprocess` → `train`), pulando estágios sem mudança |
-| `make dvc-push`  | Envia os artefatos versionados para o Google Drive                            |
+| `make dvc-push` / `make dvc-pull` | Envia/baixa os artefatos no remote ativo                     |
 | `uv run dvc status` | Mostra quais estágios estão desatualizados                                 |
 | `make run`       | Sobe a API FastAPI em `http://localhost:8000`                                 |
 | `make test`      | Roda todos os testes com pytest                                               |
@@ -378,15 +393,68 @@ make mlflow-ui
 # export MLFLOW_TRACKING_URI=sqlite:///mlflow.db
 
 # Terminal 2
-make dvc-setup GDRIVE_CLIENT_ID=<id> GDRIVE_CLIENT_SECRET=<secret>  # credenciais OAuth do Google Drive
+make dvc-use-local        # padrão; ou: make dvc-use-gdrive — escolhe o remote ativo
+# make dvc-setup GDRIVE_CLIENT_ID=<id> GDRIVE_CLIENT_SECRET=<secret>  # (só p/ gdrive) credenciais OAuth
 make repro                # = uv run dvc repro — roda apenas o que mudou
 uv run dvc repro -f train # força a reexecução do treino
 uv run dvc metrics show   # exibe models/results.json
-make dvc-push             # publica os artefatos no Google Drive
+make dvc-push             # publica os artefatos no remote ativo
 ```
 
 > `models/results.json` é declarado como métrica com `cache: false`, então fica
 > versionado no git e pode ser comparado entre commits com `dvc metrics diff`.
+
+---
+
+## 🧪 Como testar o DVC (local e remote)
+
+O DVC está funcionando quando: os **remotes** estão configurados, o **pipeline**
+está em dia, o **cache ↔ remote** estão sincronizados e um **round-trip**
+(apagar um artefato e recuperá-lo com `dvc pull`) traz o arquivo de volta.
+
+> Todos os comandos abaixo usam `uv run --extra train dvc ...` (o `dvc` vive no
+> extra `train`). Pelos alvos do `make` isso já está embutido.
+
+### Checagens rápidas (valem para qualquer remote)
+
+```bash
+uv run --extra train dvc remote list   # lista 'local' e 'gdrive'
+uv run --extra train dvc status         # → "Data and pipelines are up to date."
+uv run --extra train dvc dag            # grafo: raw → preprocess → train
+```
+
+### Testar o remote LOCAL (padrão)
+
+```bash
+make dvc-use-local                      # ativa o remote local
+uv run --extra train dvc status -c      # → "Cache and remote 'local' are in sync."
+
+# round-trip: apagar e recuperar
+rm -f data/raw/Telco_customer_churn.csv models/best_baseline.joblib
+make dvc-pull                           # baixa do remote local
+md5 data/raw/Telco_customer_churn.csv   # → 63936da3df1318a7bb017d44a8824295
+```
+
+### Testar o remote GOOGLE DRIVE
+
+Pré-requisito (uma vez por máquina): credenciais OAuth gravadas em
+`.dvc/config.local` — ver **Setup do remote Google Drive** acima.
+
+```bash
+make dvc-use-gdrive                     # ativa o remote gdrive
+uv run --extra train dvc status -c      # → "Cache and remote 'gdrive' are in sync."
+                                        #   (abre o navegador só no 1º login)
+
+# round-trip: apagar e recuperar do Drive
+rm -f data/raw/Telco_customer_churn.csv models/mlp_model.pt
+make dvc-pull                           # baixa do Google Drive
+md5 data/raw/Telco_customer_churn.csv   # → 63936da3df1318a7bb017d44a8824295
+
+make dvc-use-local                      # volta ao remote padrão
+```
+
+> **Enviar artefatos:** `make dvc-push` publica o cache no remote ativo
+> (`dvc push` só sobe o que ainda não está lá).
 
 ---
 
