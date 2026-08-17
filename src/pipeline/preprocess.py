@@ -14,6 +14,7 @@ from pathlib import Path
 
 import joblib
 import pandas as pd
+from sklearn.exceptions import NotFittedError
 
 from src.data.preprocessing import (
     build_full_pipeline,
@@ -25,7 +26,6 @@ from src.data.schema import validate_raw
 from src.monitoring.drift_detection import save_reference_stats
 from src.utils import settings
 from src.utils.logger import get_logger
-from sklearn.exceptions import NotFittedError
 
 logger = get_logger(__name__)
 
