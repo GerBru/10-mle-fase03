@@ -88,11 +88,11 @@ stages:
     outs:
     - path: models/best_baseline.joblib
       hash: md5
-      md5: 92871f681012dc18d9636cd20b0eb651
+      md5: 9cb6f0ec900338c6344e7d80a9b4d5d6
       size: 9322
     - path: models/mlp_model.pt
       hash: md5
-      md5: d2c230df0edc6139ffc1506dfba031b5
+      md5: 294d53a51efd6e66423944e259dc8d8b
       size: 83335
     - path: models/model_config.json
       hash: md5
@@ -100,5 +100,5 @@ stages:
       size: 47
     - path: models/results.json
       hash: md5
-      md5: f4702d36f996207208d4428764e6ee43
-      size: 807
+      md5: 57e9e3f27c1396c986f94f7205dfc00d
+      size: 804
