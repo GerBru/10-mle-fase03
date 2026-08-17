@@ -1,5 +1,7 @@
 [core]
     analytics = false
-    remote = storage
-['remote "storage"']
+    remote = local
+['remote "gdrive"']
     url = gdrive://1KUEHs8uvaom78ex2zrWxFoWYbBd3L07U
+['remote "local"']
+    url = ../../dvc-storage-fase2
