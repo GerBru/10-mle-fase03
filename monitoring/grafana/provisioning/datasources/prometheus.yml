@@ -1,0 +1,10 @@
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    isDefault: true
+    type: prometheus
+    # URL resolvida via variavel de ambiente (interpolacao do Grafana).
+    # Local (docker-compose): http://prometheus:9090
+    # AWS (ECS): endpoint publico do Prometheus via API Gateway (/prometheus)
+    url: ${PROMETHEUS_URL}

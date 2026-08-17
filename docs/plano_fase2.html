@@ -1,0 +1,623 @@
+<!doctype html>
+<title>Plano Tech Challenge Fase 2</title>
+<style>
+  :root {
+    --bg: #f6f5f1;
+    --surface: #ffffff;
+    --surface-2: #efece3;
+    --ink: #1b2430;
+    --ink-muted: #5b6472;
+    --ink-faint: #8a92a0;
+    --accent: #c9622a;
+    --accent-ink: #ffffff;
+    --accent-soft: #f3e0d2;
+    --accent-2: #2f6e68;
+    --accent-2-soft: #dbe9e6;
+    --line: #ddd8cc;
+    --warn-soft: #f4e3d3;
+    --ok-soft: #dcece3;
+    --ok-ink: #256a45;
+    --gap-soft: #f6dede;
+    --gap-ink: #a63b3b;
+    --shadow: 0 1px 2px rgba(27,36,48,.06), 0 8px 24px -12px rgba(27,36,48,.18);
+    --font-display: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --font-body: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14181d;
+      --surface: #1b2028;
+      --surface-2: #232932;
+      --ink: #e8e6df;
+      --ink-muted: #a3abb6;
+      --ink-faint: #6e7684;
+      --accent: #e08a4f;
+      --accent-ink: #14181d;
+      --accent-soft: #3a2a20;
+      --accent-2: #5cb3a9;
+      --accent-2-soft: #1e3330;
+      --line: #2a2f37;
+      --warn-soft: #3a3020;
+      --ok-soft: #1c3327;
+      --ok-ink: #7fd4a6;
+      --gap-soft: #3a2222;
+      --gap-ink: #e28d8d;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14181d;
+    --surface: #1b2028;
+    --surface-2: #232932;
+    --ink: #e8e6df;
+    --ink-muted: #a3abb6;
+    --ink-faint: #6e7684;
+    --accent: #e08a4f;
+    --accent-ink: #14181d;
+    --accent-soft: #3a2a20;
+    --accent-2: #5cb3a9;
+    --accent-2-soft: #1e3330;
+    --line: #2a2f37;
+    --warn-soft: #3a3020;
+    --ok-soft: #1c3327;
+    --ok-ink: #7fd4a6;
+    --gap-soft: #3a2222;
+    --gap-ink: #e28d8d;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-body);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--accent-soft); }
+
+  .wrap {
+    max-width: 840px;
+    margin: 0 auto;
+    padding: 4rem 1.5rem 6rem;
+  }
+
+  header.hero {
+    display: flex;
+    flex-direction: column;
+    gap: .9rem;
+    padding-bottom: 2.4rem;
+    margin-bottom: 2.6rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: .72rem;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    gap: .6em;
+  }
+  .eyebrow::before {
+    content: "";
+    width: 1.4em;
+    height: 1px;
+    background: var(--accent);
+    display: inline-block;
+  }
+  h1 {
+    font-family: var(--font-display);
+    font-weight: 500;
+    font-size: clamp(1.9rem, 4vw, 2.5rem);
+    line-height: 1.15;
+    margin: 0;
+    text-wrap: balance;
+    letter-spacing: -.01em;
+  }
+  .dek {
+    color: var(--ink-muted);
+    font-size: 1.05rem;
+    max-width: 62ch;
+    margin: 0;
+  }
+  .meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem 1.6rem;
+    font-family: var(--font-mono);
+    font-size: .8rem;
+    color: var(--ink-faint);
+    margin-top: .4rem;
+  }
+  .meta-row b { color: var(--ink-muted); font-weight: 600; }
+
+  section { margin-bottom: 3rem; }
+  h2 {
+    font-family: var(--font-display);
+    font-weight: 500;
+    font-size: 1.4rem;
+    margin: 0 0 .3rem;
+    text-wrap: balance;
+  }
+  .section-note {
+    color: var(--ink-muted);
+    font-size: .95rem;
+    max-width: 65ch;
+    margin: 0 0 1.3rem;
+  }
+  p { max-width: 68ch; }
+
+  /* Diagnóstico cards */
+  .diag-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: .9rem;
+  }
+  .diag-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 1.1rem 1.2rem;
+    box-shadow: var(--shadow);
+  }
+  .diag-card h3 {
+    font-size: .95rem;
+    margin: 0 0 .4rem;
+    font-weight: 600;
+  }
+  .diag-card p {
+    margin: 0;
+    font-size: .88rem;
+    color: var(--ink-muted);
+  }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: .35em;
+    font-family: var(--font-mono);
+    font-size: .68rem;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    padding: .22em .6em;
+    border-radius: 99px;
+    margin-bottom: .55rem;
+  }
+  .pill.ok { background: var(--ok-soft); color: var(--ok-ink); }
+  .pill.gap { background: var(--gap-soft); color: var(--gap-ink); }
+  .pill.warn { background: var(--warn-soft); color: #8a5a1f; }
+  :root:not([data-theme="light"]) .pill.warn { color: #e0b26b; }
+  :root[data-theme="dark"] .pill.warn { color: #e0b26b; }
+  .pill::before { content: "●"; font-size: .6em; }
+
+  /* Gap table */
+  .table-scroll { overflow-x: auto; border-radius: 10px; border: 1px solid var(--line); }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--surface);
+    font-size: .9rem;
+    min-width: 640px;
+  }
+  thead th {
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: .7rem;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 600;
+    padding: .8rem 1rem;
+    border-bottom: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+  tbody td {
+    padding: .85rem 1rem;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  .peso { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink-muted); }
+  .status-ok, .status-gap {
+    font-family: var(--font-mono);
+    font-size: .72rem;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .status-ok { color: var(--ok-ink); }
+  .status-gap { color: var(--gap-ink); }
+
+  /* Decisions */
+  .decisions { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }
+  .decision {
+    background: var(--accent-2-soft);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 1.1rem 1.2rem;
+  }
+  .decision .tag {
+    font-family: var(--font-mono);
+    font-size: .68rem;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--accent-2);
+    display: block;
+    margin-bottom: .4rem;
+  }
+  .decision p { margin: 0; font-size: .92rem; color: var(--ink); max-width: none; }
+
+  /* Timeline */
+  .timeline { position: relative; padding-left: 1.9rem; }
+  .timeline::before {
+    content: "";
+    position: absolute;
+    left: .5rem;
+    top: .4rem;
+    bottom: .4rem;
+    width: 1px;
+    background: var(--line);
+  }
+  .week {
+    position: relative;
+    margin-bottom: 2.1rem;
+  }
+  .week:last-child { margin-bottom: 0; }
+  .week::before {
+    content: "";
+    position: absolute;
+    left: -1.9rem;
+    top: .35rem;
+    width: .62rem;
+    height: .62rem;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 3px var(--bg);
+  }
+  .week-head {
+    display: flex;
+    align-items: baseline;
+    gap: .7rem;
+    margin-bottom: .8rem;
+    flex-wrap: wrap;
+  }
+  .week-head .dates {
+    font-family: var(--font-mono);
+    font-size: .78rem;
+    color: var(--accent);
+    background: var(--accent-soft);
+    padding: .15em .55em;
+    border-radius: 5px;
+  }
+  .week-head h3 { margin: 0; font-size: 1.05rem; font-weight: 600; }
+
+  .task-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .55rem; }
+  .task {
+    display: grid;
+    grid-template-columns: 5.4rem 1fr;
+    gap: .9rem;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: .7rem .9rem;
+    align-items: start;
+  }
+  .task .date {
+    font-family: var(--font-mono);
+    font-size: .74rem;
+    color: var(--ink-faint);
+    padding-top: .1rem;
+    white-space: nowrap;
+  }
+  .task .body strong { display: block; font-size: .92rem; font-weight: 600; margin-bottom: .1rem; }
+  .task .body span { font-size: .84rem; color: var(--ink-muted); }
+  .task .body code {
+    font-family: var(--font-mono);
+    font-size: .8em;
+    background: var(--surface-2);
+    padding: .1em .35em;
+    border-radius: 4px;
+  }
+
+  .task.done { border-color: var(--ok-soft); background: var(--ok-soft); }
+  .task.done .check {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.1em;
+    height: 1.1em;
+    border-radius: 50%;
+    background: var(--ok-ink);
+    color: var(--surface);
+    font-size: .7rem;
+    margin-right: .45em;
+    flex: none;
+  }
+  .task.done .commit {
+    font-family: var(--font-mono);
+    font-size: .72rem;
+    color: var(--ink-faint);
+    margin-left: .5em;
+  }
+
+  .finding {
+    background: var(--warn-soft);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 1.2rem 1.3rem;
+    display: flex;
+    flex-direction: column;
+    gap: .6rem;
+  }
+  .finding .tag {
+    font-family: var(--font-mono);
+    font-size: .68rem;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: #8a5a1f;
+  }
+  :root:not([data-theme="light"]) .finding .tag { color: #e0b26b; }
+  :root[data-theme="dark"] .finding .tag { color: #e0b26b; }
+  .finding h3 { margin: 0; font-size: 1.02rem; font-weight: 600; }
+  .finding p { margin: 0; font-size: .9rem; color: var(--ink); max-width: none; }
+  .finding .verdict {
+    font-size: .85rem;
+    color: var(--ink-muted);
+    border-top: 1px dashed var(--line);
+    padding-top: .6rem;
+    margin-top: .1rem;
+  }
+
+  .milestone {
+    background: var(--accent);
+    color: var(--accent-ink);
+    border: none;
+  }
+  .milestone .date { color: var(--accent-ink); opacity: .85; }
+  .milestone .body span { color: var(--accent-ink); opacity: .9; }
+
+  footer {
+    margin-top: 3.5rem;
+    padding-top: 1.6rem;
+    border-top: 1px solid var(--line);
+    font-family: var(--font-mono);
+    font-size: .78rem;
+    color: var(--ink-faint);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: .5rem;
+  }
+
+  @media (max-width: 520px) {
+    .task { grid-template-columns: 1fr; }
+    .task .date { padding-top: 0; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="hero">
+    <span class="eyebrow">10MLET · Tech Challenge Fase 2</span>
+    <h1>Plano de implementação — Churn Prediction para Fase 2</h1>
+    <p class="dek">Diagnóstico do que já existe (herdado da Fase 1), mapeamento contra os critérios de avaliação do edital e cronograma de tarefas até a entrega.</p>
+    <div class="meta-row">
+      <span><b>Hoje</b> 15/08/2026</span>
+      <span><b>Entrega alvo</b> 01/09/2026</span>
+      <span><b>Dataset</b> Telco Customer Churn (alternativa aceita pelo edital)</span>
+      <span><b>Status</b> Semana 1 concluída (6/6 commits) — próxima: Semana 2</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>Diagnóstico</h2>
+    <p class="section-note">A pasta <code style="font-family:var(--font-mono);background:var(--surface-2);padding:.1em .35em;border-radius:4px;">10-machine-learning-engineering-02</code> é hoje uma cópia integral do código da Fase 1 — confirmado por <code style="font-family:var(--font-mono);background:var(--surface-2);padding:.1em .35em;border-radius:4px;">diff -rq</code> entre os dois repositórios: nenhum arquivo de <code style="font-family:var(--font-mono);background:var(--surface-2);padding:.1em .35em;border-radius:4px;">src/</code> difere. O trabalho da Fase 2 é aditivo sobre essa base.</p>
+    <div class="diag-grid">
+      <div class="diag-card">
+        <span class="pill ok">Presente</span>
+        <h3>MLflow Tracking</h3>
+        <p>Params, métricas e artefatos já logados em <code>src/training/train.py</code> para baselines e MLP. Falta apenas o Model Registry.</p>
+      </div>
+      <div class="diag-card">
+        <span class="pill ok">Implementado</span>
+        <h3>DVC</h3>
+        <p>Dataset e artefatos de modelo versionados, <code>dvc.yaml</code> com estágios <code>preprocess → train</code>, pipeline reproduzível de ponta a ponta (Semana 1 concluída).</p>
+      </div>
+      <div class="diag-card">
+        <span class="pill ok">Presente</span>
+        <h3>Docker</h3>
+        <p>Dockerfile multi-stage funcional, com usuário non-root, healthcheck e build via uv. Atende ao critério sem alterações.</p>
+      </div>
+      <div class="diag-card">
+        <span class="pill ok">Presente</span>
+        <h3>Clean Code</h3>
+        <p>Módulos curtos, type hints e docstrings já trabalhados na Fase 1 (ver <code>docs/refactoring_report.md</code>).</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Decisões já tomadas</h2>
+    <p class="section-note">Duas ambiguidades do edital foram resolvidas antes de detalhar o plano.</p>
+    <div class="decisions">
+      <div class="decision">
+        <span class="tag">Gerenciador de dependências</span>
+        <p><strong>Manter uv.</strong> O edital pede Poetry na Etapa 2, mas a seção geral de requisitos permite uv como alternativa. O projeto já tem <code style="font-family:var(--font-mono);">uv.lock</code>, extras prod/dev separados e CI configurado — migrar para Poetry seria retrabalho sem ganho de nota.</p>
+      </div>
+      <div class="decision">
+        <span class="tag">Remote do DVC</span>
+        <p><strong>Remote local.</strong> Sem custo e sem credenciais de nuvem — suficiente para o critério "dataset versionado e dvc.yaml operante". A infra Terraform da Fase 1 fica disponível caso o time opte depois pelo deploy opcional em nuvem.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Gap x critérios de avaliação</h2>
+    <p class="section-note">Peso de cada critério no edital, status atual do repositório e o que falta fechar.</p>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Critério</th><th>Peso</th><th>Status</th><th>Gap a fechar</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Clean code e estrutura</td>
+            <td class="peso">20%</td>
+            <td><span class="status-ok">atende</span></td>
+            <td>Atualizar README e metadados que ainda citam "Fase 1".</td>
+          </tr>
+          <tr>
+            <td>Reprodutibilidade</td>
+            <td class="peso">20%</td>
+            <td><span class="status-ok">atende</span></td>
+            <td>Nenhum — uv sync já instala o projeto do zero.</td>
+          </tr>
+          <tr>
+            <td>Docker</td>
+            <td class="peso">15%</td>
+            <td><span class="status-ok">atende</span></td>
+            <td>Nenhum — Dockerfile já funcional.</td>
+          </tr>
+          <tr>
+            <td>DVC + Pipeline</td>
+            <td class="peso">15%</td>
+            <td><span class="status-ok">atende</span></td>
+            <td>Concluído na Semana 1 — <code style="font-family:var(--font-mono);">dvc.yaml</code> com dois estágios, <code style="font-family:var(--font-mono);">dvc repro</code> reproduzível e idempotente, dataset e modelos versionados.</td>
+          </tr>
+          <tr>
+            <td>Modelagem clássica</td>
+            <td class="peso">10%</td>
+            <td><span class="status-ok">atende</span></td>
+            <td>Nenhum — baselines Scikit-Learn já resolvem o problema.</td>
+          </tr>
+          <tr>
+            <td>MLflow + Registry</td>
+            <td class="peso">20%</td>
+            <td><span class="status-gap">parcial</span></td>
+            <td>Tracking pronto; falta registrar o melhor modelo no Model Registry e promover o estágio.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Achado da validação pós-DVC</h2>
+    <p class="section-note">Depois de fechar a Semana 1, validamos a aplicação inteira de ponta a ponta — testes, API local com artefatos reais e build de Docker a partir de um clone limpo (simulando o runner de CI/CD).</p>
+    <div class="finding">
+      <span class="tag">Regressão de infraestrutura — corrigida</span>
+      <h3>Docker/CD publicava imagem sem o modelo carregado</h3>
+      <p>Ao mover <code style="font-family:var(--font-mono);">models/preprocessor.joblib</code>, <code style="font-family:var(--font-mono);">best_baseline.joblib</code> e <code style="font-family:var(--font-mono);">model_config.json</code> do git para o DVC (Atividade 5), um clone limpo — exatamente o que o runner do GitHub Actions vê — passou a receber uma pasta <code style="font-family:var(--font-mono);">models/</code> vazia. O <code style="font-family:var(--font-mono);">docker build</code> continuava passando e o container subia normal, só que servindo <code style="font-family:var(--font-mono);">model_loaded: false</code> — uma falha silenciosa em produção.</p>
+      <p><strong>Já existia antes, parcialmente:</strong> testamos o commit anterior a toda a Semana 1 e o mesmo sintoma já ocorria — <code style="font-family:var(--font-mono);">mlp_model.pt</code> nunca esteve no git (já era ignorado desde a Fase 1). O trabalho desta semana ampliou o problema de 1 para 3 arquivos ausentes, mas não o criou.</p>
+      <p><strong>Correção aplicada:</strong> o <code style="font-family:var(--font-mono);">Dockerfile</code> agora falha o build se os três artefatos não estiverem no contexto, e o workflow de CD roda <code style="font-family:var(--font-mono);">dvc pull</code> antes de construir a imagem. Como o remote atual do DVC é uma pasta local (decisão da Semana 1), inacessível pelo runner, o CD passa a falhar alto — em vez de publicar uma imagem quebrada silenciosamente.</p>
+      <p class="verdict">Pendência em aberto: o deploy automático via CD fica bloqueado até o remote do DVC migrar para algo acessível pela CI (ex.: S3). Decisão de infraestrutura para revisar na Semana 2 ou 3.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Cronograma de tarefas</h2>
+    <p class="section-note">17 dias úteis entre hoje e a entrega, organizados em três semanas. Cada item é o menor incremento que fecha um gap específico da tabela acima.</p>
+
+    <div class="timeline">
+
+      <div class="week">
+        <div class="week-head">
+          <span class="dates">15–20 ago</span>
+          <h3>Semana 1 — DVC do zero</h3>
+          <span class="pill ok" style="margin:0;">Concluída</span>
+        </div>
+        <ul class="task-list">
+          <li class="task done">
+            <span class="date"><span class="check">✓</span>sex 15/08</span>
+            <div class="body"><strong>Adicionar DVC às dependências</strong><span>Incluído <code>dvc</code> no extra <code>train</code> do pyproject.toml, <code>uv sync</code> executado.<span class="commit">575725d</span></span></div>
+          </li>
+          <li class="task done">
+            <span class="date"><span class="check">✓</span>seg 17/08</span>
+            <div class="body"><strong>Inicializar DVC + remote local</strong><span><code>dvc init</code> e remote local configurado (ajustado para <code>../dvc-storage-fase2</code> por conflito de permissão com pasta pré-existente).<span class="commit">fc40be9</span></span></div>
+          </li>
+          <li class="task done">
+            <span class="date"><span class="check">✓</span>ter 18/08</span>
+            <div class="body"><strong>Versionar o dataset</strong><span><code>dvc add</code> + <code>dvc push</code> do CSV; removido do rastreio direto do git.<span class="commit">6660c26</span></span></div>
+          </li>
+          <li class="task done">
+            <span class="date"><span class="check">✓</span>qua–qui 19–20/08</span>
+            <div class="body"><strong>Separar train.py em estágios</strong><span>Extraído <code>src/pipeline/preprocess.py</code>; <code>train.py</code> passa a consumir <code>data/processed/splits.joblib</code>.<span class="commit">03e8265</span></span></div>
+          </li>
+          <li class="task done">
+            <span class="date"><span class="check">✓</span>qui 20/08</span>
+            <div class="body"><strong>Escrever dvc.yaml + params.yaml</strong><span>Dois estágios (preprocess → train), hiperparâmetros do MLP e seed migrados para <code>params.yaml</code>. <code>dvc repro</code> validado como reproduzível e idempotente.<span class="commit">db42f83</span></span></div>
+          </li>
+          <li class="task done">
+            <span class="date"><span class="check">✓</span>sex 15/08 <em style="font-style:normal;opacity:.75;">(extra)</em></span>
+            <div class="body"><strong>Correção: build/CD sem artefatos de modelo</strong><span>Validação de ponta a ponta encontrou regressão (ver achado acima); Dockerfile e workflow de CD agora falham alto em vez de publicar imagem quebrada.<span class="commit">34c65c4</span></span></div>
+          </li>
+        </ul>
+      </div>
+
+      <div class="week">
+        <div class="week-head">
+          <span class="dates">21–27 ago</span>
+          <h3>Semana 2 — Registry, testes e docs</h3>
+        </div>
+        <ul class="task-list">
+          <li class="task">
+            <span class="date">sex 21/08</span>
+            <div class="body"><strong>Decidir remote do DVC para CI</strong><span>Pendência aberta na validação da Semana 1: o CD está bloqueado sem um remote acessível pelo GitHub Actions. Definir se migra para S3 ou se o deploy segue manual por enquanto.</span></div>
+          </li>
+          <li class="task">
+            <span class="date">seg–ter 24–25/08</span>
+            <div class="body"><strong>MLflow Model Registry</strong><span>Registrar o melhor modelo (<code>best_baseline</code>) via <code>log_model(registered_model_name=...)</code> e promover o estágio/alias após a run vencedora.</span></div>
+          </li>
+          <li class="task">
+            <span class="date">qua 26/08</span>
+            <div class="body"><strong>Testes automatizados</strong><span>Cobrir o novo estágio de preprocess e a chamada ao Registry; incluir no CI existente.</span></div>
+          </li>
+          <li class="task">
+            <span class="date">qui 27/08</span>
+            <div class="body"><strong>Atualizar README e docs/</strong><span>Remover referências à "Fase 1", documentar <code>dvc repro</code>, <code>dvc pull</code>, MLflow UI e o fluxo do Registry.</span></div>
+          </li>
+        </ul>
+      </div>
+
+      <div class="week">
+        <div class="week-head">
+          <span class="dates">28 ago – 01 set</span>
+          <h3>Semana 3 — Revisão e entrega</h3>
+        </div>
+        <ul class="task-list">
+          <li class="task">
+            <span class="date">sex 28/08</span>
+            <div class="body"><strong>Auditoria de Clean Code</strong><span>Checar funções acima de ~20 linhas nos módulos tocados na semana 1–2; rodar <code>ruff check</code>.</span></div>
+          </li>
+          <li class="task">
+            <span class="date">sáb 29/08</span>
+            <div class="body"><strong>Roteiro do vídeo STAR</strong><span>Situation / Task / Action / Result — 5 minutos, cobrindo decisões de arquitetura, Docker, DVC e MLflow.</span></div>
+          </li>
+          <li class="task">
+            <span class="date">dom 30/08</span>
+            <div class="body"><strong>Gravação do vídeo</strong><span>Demonstrar o pipeline rodando ponta a ponta: <code>dvc repro</code>, <code>docker build</code>, MLflow UI com o modelo registrado.</span></div>
+          </li>
+          <li class="task">
+            <span class="date">seg 31/08</span>
+            <div class="body"><strong>Revisão final + buffer</strong><span>Checklist contra os critérios de avaliação; organização do histórico de commits; ajustes de última hora.</span></div>
+          </li>
+          <li class="task milestone">
+            <span class="date">ter 01/09</span>
+            <div class="body"><strong>Entrega</strong><span>Push final para o GitHub + link do vídeo no README.</span></div>
+          </li>
+        </ul>
+      </div>
+
+    </div>
+  </section>
+
+  <footer>
+    <span>Plano gerado para orientar a implementação — não substitui revisão do time.</span>
+    <span>Fonte: 10MLET — Tech Challenge Fase 2 (PDF)</span>
+  </footer>
+
+</div>

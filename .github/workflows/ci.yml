@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev, "feature/**"]
+  pull_request:
+    branches: [main, dev]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        # dev = testes/lint; train = libs de treino/validação (pandera, mlflow...)
+        # exigidas por tests/test_schema.py e pelo pipeline de treino. A imagem
+        # Docker continua enxuta: o Dockerfile instala apenas as deps de runtime.
+        run: uv sync --extra dev --extra train --frozen
+
+      - name: Lint with ruff
+        run: uv run ruff check src/ tests/
+
+      - name: Run tests
+        run: uv run pytest tests/ -v --cov=src --cov-report=xml --cov-report=term-missing
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.xml
+        continue-on-error: true

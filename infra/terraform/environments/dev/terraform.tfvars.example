@@ -1,0 +1,7 @@
+aws_region   = "sa-east-1"
+environment  = "dev"
+project_name = "churn-prediction"
+
+# Ajuste para a imagem publicada no ECR do seu ambiente.
+container_image = "123456789012.dkr.ecr.sa-east-1.amazonaws.com/churn-prediction-dev-api:latest"
+

@@ -1,0 +1,104 @@
+schema: '2.0'
+stages:
+  preprocess:
+    cmd: uv run python -m src.pipeline.preprocess
+    deps:
+    - path: data/raw/Telco_customer_churn.csv
+      hash: md5
+      md5: 63936da3df1318a7bb017d44a8824295
+      size: 1735979
+    - path: src/data/preprocessing.py
+      hash: md5
+      md5: 10789bdb6d88b32fdc950d80ad20f940
+      size: 8584
+    - path: src/data/schema.py
+      hash: md5
+      md5: 491af620719e4eaf070fd60571326c2b
+      size: 2591
+    - path: src/data/transformers.py
+      hash: md5
+      md5: 6b9a56aef899e9c071bd6f0d1feb5911
+      size: 2810
+    - path: src/features/engineering.py
+      hash: md5
+      md5: 2b2a0fe3cde1c94ea9c26571cf4a3e05
+      size: 1632
+    - path: src/monitoring/drift_detection.py
+      hash: md5
+      md5: ca296c16d49da9aed6bf86635be9e4e1
+      size: 4681
+    - path: src/pipeline/preprocess.py
+      hash: md5
+      md5: acfeb510baea8b929cb643df5314f356
+      size: 4325
+    outs:
+    - path: data/processed/splits.joblib
+      hash: md5
+      md5: bdc649901dbc683ada6b756d5cd055bd
+      size: 4049490
+    - path: models/preprocessor.joblib
+      hash: md5
+      md5: 715289399aa60c13e295c686f61fd607
+      size: 8186
+    - path: models/reference_stats.npz
+      hash: md5
+      md5: ae8329e241b878c063ca18a0a5232f02
+      size: 2343140
+  train:
+    cmd: uv run python -m src.training.train
+    deps:
+    - path: data/processed/splits.joblib
+      hash: md5
+      md5: bdc649901dbc683ada6b756d5cd055bd
+      size: 4049490
+    - path: src/models/baseline.py
+      hash: md5
+      md5: 64a83e7cb6e4d97e61a8fb4eb5a6e760
+      size: 5400
+    - path: src/models/evaluation.py
+      hash: md5
+      md5: 0abe7921cf0bba44e200a65cd8a2c606
+      size: 2214
+    - path: src/models/mlp.py
+      hash: md5
+      md5: 86d3995281493c6b4be9d2ea3fdb7d0f
+      size: 11643
+    - path: src/models/registry.py
+      hash: md5
+      md5: 27367bf17ef7975b0b0b98205af86361
+      size: 6251
+    - path: src/training/train.py
+      hash: md5
+      md5: c5bb92c03c666f7342d005d853344f41
+      size: 7563
+    params:
+      params.yaml:
+        train.mlp:
+          hidden_dims:
+          - 128
+          - 64
+          - 32
+          dropout_rate: 0.3
+          lr: 0.001
+          batch_size: 64
+          max_epochs: 100
+          patience: 10
+          use_batch_norm: true
+        train.random_state: 42
+    outs:
+    - path: models/best_baseline.joblib
+      hash: md5
+      md5: 9cb6f0ec900338c6344e7d80a9b4d5d6
+      size: 9322
+    - path: models/mlp_model.pt
+      hash: md5
+      md5: 294d53a51efd6e66423944e259dc8d8b
+      size: 83335
+    - path: models/model_config.json
+      hash: md5
+      md5: e56ede94e01676483b3f8d970864d0e8
+      size: 47
+    - path: models/results.json
+      hash: md5
+      md5: 57e9e3f27c1396c986f94f7205dfc00d
+      size: 804

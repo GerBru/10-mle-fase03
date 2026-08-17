@@ -1,0 +1,35 @@
+stages:
+  preprocess:
+    cmd: uv run python -m src.pipeline.preprocess
+    deps:
+      - src/pipeline/preprocess.py
+      - src/data/preprocessing.py
+      - src/data/schema.py
+      - src/data/transformers.py
+      - src/features/engineering.py
+      - src/monitoring/drift_detection.py
+      - data/raw/Telco_customer_churn.csv
+    outs:
+      - data/processed/splits.joblib
+      - models/preprocessor.joblib
+      - models/reference_stats.npz
+
+  train:
+    cmd: uv run python -m src.training.train
+    deps:
+      - src/training/train.py
+      - src/models/baseline.py
+      - src/models/evaluation.py
+      - src/models/mlp.py
+      - src/models/registry.py
+      - data/processed/splits.joblib
+    params:
+      - train.random_state
+      - train.mlp
+    outs:
+      - models/best_baseline.joblib
+      - models/mlp_model.pt
+      - models/model_config.json
+    metrics:
+      - models/results.json:
+          cache: false
