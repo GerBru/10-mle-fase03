@@ -275,34 +275,40 @@ uv run python -c "from src.utils.config import settings"
 ### Dataset
 
 O dataset é versionado com DVC — o git rastreia apenas o ponteiro
-`data/raw/Telco_customer_churn.csv.dvc`. O remote é o **Google Drive**,
-autenticado por **service account** (compartilhável entre o grupo e utilizável no
-CI, sem fluxo de navegador).
+`data/raw/Telco_customer_churn.csv.dvc`. O remote é o **Google Drive**
+(`url = gdrive://<FOLDER_ID>` em `.dvc/config`), autenticado por **OAuth**
+(login no navegador; os arquivos ficam na cota do usuário — funciona em conta
+Google pessoal, onde *service accounts* não têm cota).
 
 **Setup do remote (uma vez por máquina):**
 
-1. **Crie a service account** no [Google Cloud Console](https://console.cloud.google.com/)
-   (IAM & Admin → Service Accounts), habilite a **Google Drive API** no projeto e
-   gere uma **chave JSON**. Salve como `gdrive-service-account.json` na raiz do
-   projeto (já está no `.gitignore` — **não commite**).
-2. **Compartilhe a pasta do Drive** (a mesma do `url = gdrive://<FOLDER_ID>` em
-   `.dvc/config`) com o **e-mail da service account** (algo como
-   `...@...iam.gserviceaccount.com`), com permissão de *Editor*.
-3. **Aponte o DVC para a chave** (grava em `.dvc/config.local`, fora do git):
+1. **Crie um OAuth Client** no [Google Cloud Console](https://console.cloud.google.com/)
+   → **APIs & Services**:
+   - **Library** → habilite a **Google Drive API**.
+   - **OAuth consent screen** (User Type *External*): adicione seu e-mail Google em
+     **Test users**.
+   - **Credentials → Create Credentials → OAuth client ID → Application type: Desktop app**.
+     Anote o **Client ID** e o **Client secret**.
+2. **Garanta acesso à pasta:** a conta Google usada no login precisa ter acesso à
+   pasta do Drive apontada em `.dvc/config` (dono ou compartilhada como *Editor*).
+3. **Grave as credenciais** em `.dvc/config.local` (fora do git):
 
    ```bash
-   make dvc-setup                       # usa gdrive-service-account.json por padrão
-   # ou, com caminho customizado:
-   # make dvc-setup GDRIVE_SA_JSON=/caminho/para/chave.json
+   # defina os valores do seu OAuth Client (ex.: no seu .env) e rode:
+   make dvc-setup GDRIVE_CLIENT_ID=<id> GDRIVE_CLIENT_SECRET=<secret>
    ```
 
-4. **Baixe os dados versionados:**
+4. **Baixe os dados versionados** (abre o navegador para autorizar na 1ª vez):
 
    ```bash
    uv run dvc pull   # dataset + artefatos do Google Drive
    ```
 
-> **Fallback sem o remote:** se ainda não tiver acesso à service account, reidrate
+> **CI:** o fluxo OAuth é interativo (navegador), então não roda *headless* no
+> runner. O `cd.yml` falha de propósito no `dvc pull` até haver credenciais
+> não-interativas (ex.: Shared Drive + service account).
+
+> **Fallback sem o remote:** se ainda não tiver acesso ao Drive, reidrate
 > o dataset baixando
 > [Telco Customer Churn (IBM)](https://www.kaggle.com/datasets/yeanzc/telco-customer-churn-ibm-dataset)
 > manualmente para `data/raw/Telco_customer_churn.csv` e valide o hash:
@@ -325,7 +331,7 @@ Sem o dataset, seis testes de `test_schema.py` são pulados silenciosamente
 | `make install`   | Instala dependências de desenvolvimento (`--extra dev`)                       |
 | `make mlflow-ui` | Abre o MLflow UI em `http://localhost:5001`*                                  |
 | `make train`     | Treina baselines + MLP, loga no MLflow, salva artefatos (requer MLflow ativo) |
-| `make dvc-setup` | Aponta o remote do Google Drive para a chave da service account (`.dvc/config.local`) |
+| `make dvc-setup` | Grava as credenciais OAuth do Google Drive em `.dvc/config.local` (`GDRIVE_CLIENT_ID`/`GDRIVE_CLIENT_SECRET`) |
 | `make repro`     | Reproduz o pipeline completo (`preprocess` → `train`), pulando estágios sem mudança |
 | `make dvc-push`  | Envia os artefatos versionados para o Google Drive                            |
 | `uv run dvc status` | Mostra quais estágios estão desatualizados                                 |
@@ -372,7 +378,7 @@ make mlflow-ui
 # export MLFLOW_TRACKING_URI=sqlite:///mlflow.db
 
 # Terminal 2
-make dvc-setup            # configura a chave da service account do Google Drive
+make dvc-setup GDRIVE_CLIENT_ID=<id> GDRIVE_CLIENT_SECRET=<secret>  # credenciais OAuth do Google Drive
 make repro                # = uv run dvc repro — roda apenas o que mudou
 uv run dvc repro -f train # força a reexecução do treino
 uv run dvc metrics show   # exibe models/results.json
@@ -873,7 +879,8 @@ máquina que roda a suíte.
 | 4     | README + vídeo STAR                                                                           | 🔶 Parcial     |
 | +     | Seção de padrões de projeto (GoF + ML), ancorada em arquivo e símbolo                         | ✅ Concluída   |
 | 5     | Ajustes de `metrics.json` e `.gitignore`                                                      | 🔲 Pendente    |
-| —     | Migrar remote do DVC para storage compartilhado (desbloqueia o CD)                            | 🔲 Pendente    |
+| —     | Remote do DVC migrado para Google Drive (OAuth) — compartilhável entre o grupo                | ✅ Concluída   |
+| —     | Desbloquear o CD com credenciais não-interativas (Shared Drive + service account)             | 🔲 Pendente    |
 
 
 ---

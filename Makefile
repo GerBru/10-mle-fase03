@@ -19,12 +19,12 @@ test:
 train:
 	uv run python -m src.training.train
 
-# Aponta o remote do Google Drive para a chave da service account (config.local,
-# fora do git). Defina GDRIVE_SA_JSON com o caminho do JSON ou use o default.
-GDRIVE_SA_JSON ?= gdrive-service-account.json
+# Grava as credenciais OAuth do Google Drive em .dvc/config.local (fora do git).
+# Defina GDRIVE_CLIENT_ID e GDRIVE_CLIENT_SECRET (ex.: exportados do seu .env)
+# do seu OAuth Client "Desktop" criado no Google Cloud Console.
 dvc-setup:
-	uv run dvc remote modify --local storage \
-		gdrive_service_account_json_file_path $(GDRIVE_SA_JSON)
+	uv run dvc remote modify --local storage gdrive_client_id $(GDRIVE_CLIENT_ID)
+	uv run dvc remote modify --local storage gdrive_client_secret $(GDRIVE_CLIENT_SECRET)
 
 # Reproduz o pipeline completo (preprocess -> train), pulando estágios sem mudança.
 repro:
