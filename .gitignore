@@ -19,7 +19,7 @@ env/
 # models/*.joblib
 models/*.pt
 # models/*.pkl
-# models/results.json
+models/results.json
 mlruns/
 mlartifacts/
 mlflow.db
