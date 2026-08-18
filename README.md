@@ -946,7 +946,7 @@ máquina que roda a suíte.
 | +     | 15 testes novos (configuração e aderência aos padrões documentados)                           | ✅ Concluída   |
 | 4     | README + vídeo STAR                                                                           | 🔶 Parcial     |
 | +     | Seção de padrões de projeto (GoF + ML), ancorada em arquivo e símbolo                         | ✅ Concluída   |
-| 5     | Ajustes de `metrics.json` e `.gitignore`                                                      | 🔲 Pendente    |
+| 5     | Ajustes de `metrics.json` e `.gitignore`                                                      | ✅ Concluída   |
 | —     | Remote do DVC migrado para Google Drive (OAuth) — compartilhável entre o grupo                | ✅ Concluída   |
 | —     | Desbloquear o CD com credenciais não-interativas (Shared Drive + service account)             | 🔲 Pendente    |
 
