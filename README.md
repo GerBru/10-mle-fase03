@@ -1,7 +1,7 @@
 # 🔮 Churn Prediction — FIAP Tech Challenge Fase 2
 
 > Modelo preditivo de churn para operadora de telecomunicações.
-> Pipeline end-to-end reprodutível: DVC → Baselines → Model Registry → MLP (PyTorch) → API (FastAPI) → Deploy (Docker + CI/CD).
+> Pipeline end-to-end reprodutível: DVC → Baselines + MLP → MLflow Model Registry → API (FastAPI) → Deploy (Docker + CI/CD).
 
 **Fase 2** adiciona fundamentos de MLOps sobre a base da Fase 1: versionamento de dados
 e pipeline reprodutível com **DVC**, e promoção de modelos com o **MLflow Model Registry**.
@@ -25,7 +25,7 @@ constrói um sistema preditivo de churn do zero até o modelo servido via API, a
 boas práticas de Machine Learning Engineering:
 
 - **Versionamento de dados:** DVC — dataset e artefatos fora do git, pipeline em estágios (`preprocess` → `train`)
-- **Modelo principal:** Rede neural MLP treinada com PyTorch
+- **Modelo servido por padrão:** campeão sklearn promovido no Registry; a MLP PyTorch da Fase 1 continua disponível com `MODEL_SOURCE=mlp`
 - **Baselines:** DummyClassifier, LogisticRegression, RandomForest (com RandomizedSearchCV), GradientBoosting
 - **Rastreamento:** MLflow (parâmetros, métricas, artefatos)
 - **Promoção de modelos:** MLflow Model Registry — melhor baseline sklearn promovido com alias `@champion`
@@ -154,6 +154,7 @@ A documentação completa do projeto está organizada em `docs/` e no módulo de
 | Documento                                                      | Conteúdo                                                                                | Quando consultar                                              |
 | -------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
 | `[docs/technical_overview.md](docs/technical_overview.md)`     | Visão técnica end-to-end (dados → features → modelos → API) + roteiro STAR para o vídeo | Para entender o funcionamento interno de cada módulo          |
+| `[docs/roteiro_video_star.md](docs/roteiro_video_star.md)`     | Roteiro STAR cronometrado, comandos e checklist de gravação                            | Para gravar a apresentação final em aproximadamente 5 minutos |
 | `[docs/model_card.md](docs/model_card.md)`                     | Model Card: arquitetura, métricas, vieses, limitações e cenários de falha               | Para avaliar performance, fairness e uso pretendido do modelo |
 | `[docs/monitoring_plan.md](docs/monitoring_plan.md)`           | Plano de monitoramento: drift, fairness, alertas e playbook de incidentes               | Para operar o modelo em produção                              |
 | `[docs/refactoring_report.md](docs/refactoring_report.md)`     | Relatório de refatoração SOLID + Design Patterns + proposta de microsserviços           | Para entender as decisões de arquitetura de software          |
@@ -487,10 +488,10 @@ O modelo registrado é um `Pipeline` sklearn completo — pré-processamento e
 classificador —, portanto prediz a partir do CSV original sem depender do
 `preprocessor.joblib`.
 
-Cada execução do treino cria uma nova versão e move o alias para ela. Se o
-Registry estiver indisponível (servidor fora do ar, backend sem banco), o módulo
-loga o erro e o treino segue normalmente — a promoção é opcional, o pipeline não
-quebra.
+Cada artefato novo cria uma versão e move o alias para ela; repetir a promoção do
+mesmo artefato reutiliza a versão existente. Por padrão, a indisponibilidade do
+Registry interrompe o treino (`MLFLOW_REGISTRY_REQUIRED=true`), evitando uma
+entrega sem evidência de promoção. O modo opcional existe apenas para diagnóstico.
 
 > O Registry exige backend com banco de dados. O projeto usa
 > `MLFLOW_TRACKING_URI=http://localhost:5001` com SQLite; um file store puro
@@ -537,7 +538,7 @@ data/raw/Telco_customer_churn.csv (DVC)
     FastAPI (app.py — controller)
     ├── security.py          # JWT + API Key + InMemoryUserRepository
     ├── metrics.py           # Prometheus: 8 métricas
-    ├── model_loader.py      # ModelRepository → LocalModelRepository
+    ├── model_loader.py      # ChampionModelRepository (padrão) ou LocalModelRepository (MLP)
     ├── prediction_service.py # PredictionService + RiskClassifier
     ├── /predict             # predição individual (JWT)
     ├── /predict-apikey      # predição individual (API Key)
@@ -764,7 +765,9 @@ no valor de desenvolvimento — ver **Segredos e ambientes**.
 
 ```bash
 # exige .env na raiz com JWT_SECRET_KEY e API_KEY preenchidos
-docker compose up -d
+# constrói as imagens, executa o DVC contra o MLflow e só então libera a API
+docker compose up --build -d
+docker compose ps
 ```
 
 
@@ -800,7 +803,7 @@ O Dockerfile usa cache do uv (`--mount=type=cache`) para otimizar builds:
 
 | Workflow | Trigger           | O que faz                        |
 | -------- | ----------------- | -------------------------------- |
-| `ci.yml` | Todo push e PR    | Lint (ruff) + 75 testes (pytest) |
+| `ci.yml` | Todo push e PR    | Lint (ruff) + testes e cobertura mínima de 80% |
 | `cd.yml` | Merge para `main` | Build Docker + push para GHCR    |
 
 
@@ -825,13 +828,21 @@ Para manter o `README` enxuto, o passo a passo completo (credenciais sem hardcod
 ## 📊 Métricas Principais
 
 
-| Modelo                        | AUC-ROC    | F1         | Precision  | Recall     |
-| ----------------------------- | ---------- | ---------- | ---------- | ---------- |
-| DummyClassifier               | 0.5163     | 0.2903     | 0.2891     | 0.2914     |
-| RandomForest                  | 0.8337     | 0.5514     | 0.6229     | 0.4947     |
-| GradientBoosting              | 0.8555     | 0.5944     | 0.6689     | 0.5348     |
-| **LogisticRegression** 🏆     | 0.8533     | **0.6205** | 0.5103     | 0.7914     |
-| **MLP (PyTorch)**             | 0.8539     | **0.6299** | 0.5040     | 0.8396     |
+### Seleção dos baselines — validação cruzada no desenvolvimento
+
+| Modelo                    | F1 médio CV | AUC-ROC médio CV |
+| ------------------------- | ----------- | ---------------- |
+| DummyClassifier           | 0.2715      | 0.5068           |
+| RandomForest              | 0.5300      | 0.8322           |
+| GradientBoosting          | 0.6023      | 0.8578           |
+| **LogisticRegression** 🏆 | **0.6424**  | **0.8586**       |
+
+### Avaliação final — conjunto de teste intocado
+
+| Modelo                    | AUC-ROC | F1     | Precision | Recall |
+| ------------------------- | ------- | ------ | --------- | ------ |
+| **LogisticRegression** 🏆 | 0.8531  | 0.6176 | 0.5087    | 0.7861 |
+| **MLP (PyTorch)**         | 0.8521  | 0.6308 | 0.5082    | 0.8316 |
 
 
 🏆 = promovido no Model Registry como `churn-classifier@champion`.
@@ -840,12 +851,10 @@ Para manter o `README` enxuto, o passo a passo completo (credenciais sem hardcod
 `docs/model_card.md`). Execute `uv run dvc repro` para reproduzir — os seeds fixos
 garantem os mesmos números.*
 
-**Por que a LogisticRegression e não o GradientBoosting?** O critério de seleção é
-F1, e por F1 a LogReg vence entre os baselines. O GBT tem accuracy e precision
-superiores, mas recall bem menor (0.5348 contra 0.7914). Para retenção de clientes,
-deixar de identificar quem vai cancelar custa mais do que oferecer desconto a quem
-ficaria de qualquer forma. Vale notar que LogReg e RandomForest usam
-`class_weight="balanced"` e o GBT não — a comparação não é perfeitamente isonômica.
+**Por que a LogisticRegression?** A escolha ocorre exclusivamente pelo F1 médio da
+validação cruzada no conjunto de desenvolvimento. Somente após a seleção, o campeão
+é reajustado em todo o desenvolvimento e avaliado uma única vez no teste intocado.
+Isso impede que o conjunto de teste influencie a escolha do modelo.
 
 A MLP supera todos os baselines em F1 e recall, mas o Registry recebe o modelo
 sklearn conforme o escopo da Fase 2; a MLP permanece rastreada no MLflow Tracking.
@@ -854,7 +863,7 @@ sklearn conforme o escopo da Fase 2; a MLP permanece rastreada no MLflow Trackin
 
 ## 🧪 Testes
 
-75 testes passando, cobrindo: smoke, schema (pandera), API (JWT + API Key + batch),
+82 testes passando e 81,86% de cobertura, cobrindo: smoke, schema (pandera), API (JWT + API Key + batch),
 model, preprocessing, fairness, Model Registry, configuração/segredos e aderência
 aos padrões documentados.
 
@@ -944,11 +953,12 @@ máquina que roda a suíte.
 | +     | Factory do repositório de modelo (`build_model_repository`) — ponto único de troca            | ✅ Concluída   |
 | +     | Estatísticas de referência para detecção de drift (`models/reference_stats.npz`)              | ✅ Concluída   |
 | +     | 15 testes novos (configuração e aderência aos padrões documentados)                           | ✅ Concluída   |
-| 4     | README + vídeo STAR                                                                           | 🔶 Parcial     |
+| 4     | README + roteiro do vídeo STAR                                                                 | ✅ Concluída   |
+| +     | Gravação e publicação do vídeo                                                                 | 🔶 A gravar    |
 | +     | Seção de padrões de projeto (GoF + ML), ancorada em arquivo e símbolo                         | ✅ Concluída   |
 | 5     | Ajustes de `metrics.json` e `.gitignore`                                                      | ✅ Concluída   |
 | —     | Remote do DVC migrado para Google Drive (OAuth) — compartilhável entre o grupo                | ✅ Concluída   |
-| —     | Desbloquear o CD com credenciais não-interativas (Shared Drive + service account)             | 🔲 Pendente    |
+| —     | CD com autenticação não interativa por service account (`DVC_GDRIVE_SERVICE_ACCOUNT_JSON`)    | ✅ Implementado; requer secret no GitHub |
 
 
 ---

@@ -73,3 +73,7 @@ class HealthOutput(BaseModel):
     status: str
     model_loaded: bool
     version: str
+    model_source: str | None = None
+    model_name: str | None = None
+    model_version: str | None = None
+    model_alias: str | None = None

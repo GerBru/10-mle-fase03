@@ -2,8 +2,9 @@ services:
 
   # ── API ───────────────────────────────────────────────────────────────────
   api:
-    build: .
-    container_name: churn-api
+    build:
+      context: .
+      target: runtime
     ports:
       - "8000:8000"
     environment:
@@ -13,6 +14,7 @@ services:
       - "JWT_SECRET_KEY=${JWT_SECRET_KEY:?defina no .env - gere com openssl rand -hex 32}"
       - "API_KEY=${API_KEY:?defina no .env - gere com openssl rand -hex 16}"
       - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI:-http://mlflow:5000}
+      - MODEL_SOURCE=${MODEL_SOURCE:-champion}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
       - ./models:/app/models:ro
@@ -27,31 +29,55 @@ services:
     networks:
       - monitoring
     depends_on:
-      - mlflow
+      pipeline:
+        condition: service_completed_successfully
+
+  # ── Pipeline DVC: preprocess → train → Registry ───────────────────────────
+  pipeline:
+    build:
+      context: .
+      target: trainer
+    environment:
+      - APP_ENV=development
+      - DVC_NO_SCM=true
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - MLFLOW_REGISTRY_REQUIRED=true
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./dvc.lock:/app/dvc.lock
+      - ./.dvc/cache:/app/.dvc/cache
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    networks:
+      - monitoring
 
   # ── MLflow ────────────────────────────────────────────────────────────────
   mlflow:
-    image: ghcr.io/mlflow/mlflow:latest
-    container_name: churn-mlflow
+    image: ghcr.io/mlflow/mlflow:v3.1.4
     ports:
       - "5001:5000"
     command: >
       mlflow server
-      --backend-store-uri sqlite:///mlflow.db
-      --default-artifact-root /mlruns
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --artifacts-destination /mlflow/artifacts
       --host 0.0.0.0
       --port 5000
     volumes:
-      - ./mlruns:/mlruns
-      - ./mlflow.db:/mlflow.db
+      - mlflow_data:/mlflow
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
     restart: unless-stopped
     networks:
       - monitoring
 
   # ── Prometheus ────────────────────────────────────────────────────────────
   prometheus:
-    image: prom/prometheus:latest
-    container_name: churn-prometheus
+    image: prom/prometheus:v2.54.1
     ports:
       - "9090:9090"
     volumes:
@@ -70,8 +96,7 @@ services:
 
   # ── Grafana ───────────────────────────────────────────────────────────────
   grafana:
-    image: grafana/grafana:latest
-    container_name: churn-grafana
+    image: grafana/grafana:11.2.0
     ports:
       - "3000:3000"
     environment:
@@ -89,6 +114,7 @@ services:
       - prometheus
 
 volumes:
+  mlflow_data:
   prometheus_data:
   grafana_data:
 

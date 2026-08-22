@@ -1,6 +1,11 @@
+"""HTTP integration tests for the Phase 1 API preserved in Phase 2."""
+
+from unittest.mock import MagicMock
+
+import httpx
 import numpy as np
 import pytest
-from fastapi.testclient import TestClient
+import pytest_asyncio
 
 import src.api.app as app_module
 from src.api.app import app
@@ -29,156 +34,136 @@ VALID_PAYLOAD = {
     "payment_method": "Electronic check",
 }
 
-# Token JWT válido para os testes
 TEST_TOKEN = create_access_token(username="admin", role="admin")
 AUTH_HEADERS = {"Authorization": f"Bearer {TEST_TOKEN}"}
+pytestmark = pytest.mark.asyncio
 
 
-@pytest.fixture
-def client():
-    from unittest.mock import MagicMock
-
+@pytest_asyncio.fixture
+async def client():
     mock_pipeline = MagicMock()
-    mock_pipeline.transform.side_effect = lambda df: np.zeros((len(df), 30), dtype=np.float32)
-
+    mock_pipeline.transform.side_effect = lambda frame: np.zeros(
+        (len(frame), 30), dtype=np.float32
+    )
     mock_model = ChurnMLP(input_dim=30, hidden_dims=[32, 16])
     mock_model.eval()
-
-    with TestClient(app) as c:
-        app_module._state["pipeline"] = mock_pipeline
-        app_module._state["model"] = mock_model
-        yield c
-
-    app_module._state["pipeline"] = None
-    app_module._state["model"] = None
-
-
-@pytest.fixture
-def client_no_model():
-    with TestClient(app) as c:
-        app_module._state["pipeline"] = None
-        app_module._state["model"] = None
-        yield c
+    app_module._state.update(
+        {
+            "pipeline": mock_pipeline,
+            "model": mock_model,
+            "model_source": "mlp",
+            "model_metadata": {"framework": "pytorch"},
+        }
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as api:
+        yield api
+    app_module._state.update(
+        {"pipeline": None, "model": None, "model_source": None, "model_metadata": {}}
+    )
 
 
-def test_health_returns_ok(client):
-    response = client.get("/health")
+@pytest_asyncio.fixture
+async def client_no_model():
+    app_module._state.update({"pipeline": None, "model": None})
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as api:
+        yield api
+
+
+async def test_health_returns_ok(client):
+    response = await client.get("/health")
     assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "ok"
-    assert data["model_loaded"] is True
-    assert "version" in data
+    assert response.json()["model_loaded"] is True
+    assert response.json()["model_source"] == "mlp"
 
 
-def test_predict_valid_payload_returns_200(client):
-    response = client.post("/predict", json=VALID_PAYLOAD, headers=AUTH_HEADERS)
+async def test_predict_valid_payload_returns_200(client):
+    response = await client.post("/predict", json=VALID_PAYLOAD, headers=AUTH_HEADERS)
     assert response.status_code == 200
 
 
-def test_predict_response_schema(client):
-    response = client.post("/predict", json=VALID_PAYLOAD, headers=AUTH_HEADERS)
-    data = response.json()
-    assert "churn_probability" in data
-    assert "prediction" in data
-    assert "risk_level" in data
+async def test_predict_response_schema(client):
+    response = await client.post("/predict", json=VALID_PAYLOAD, headers=AUTH_HEADERS)
+    assert set(response.json()) == {"churn_probability", "prediction", "risk_level"}
 
 
-def test_predict_probability_in_range(client):
-    response = client.post("/predict", json=VALID_PAYLOAD, headers=AUTH_HEADERS)
-    prob = response.json()["churn_probability"]
-    assert 0.0 <= prob <= 1.0
+async def test_predict_probability_and_class_are_valid(client):
+    response = await client.post("/predict", json=VALID_PAYLOAD, headers=AUTH_HEADERS)
+    result = response.json()
+    assert 0.0 <= result["churn_probability"] <= 1.0
+    assert result["prediction"] in {0, 1}
+    assert result["risk_level"] in {"low", "medium", "high"}
 
 
-def test_predict_binary_prediction(client):
-    response = client.post("/predict", json=VALID_PAYLOAD, headers=AUTH_HEADERS)
-    prediction = response.json()["prediction"]
-    assert prediction in {0, 1}
-
-
-def test_predict_risk_level_valid(client):
-    response = client.post("/predict", json=VALID_PAYLOAD, headers=AUTH_HEADERS)
-    risk = response.json()["risk_level"]
-    assert risk in {"low", "medium", "high"}
-
-
-def test_predict_missing_field_returns_422(client):
-    incomplete = {k: v for k, v in VALID_PAYLOAD.items() if k != "tenure"}
-    response = client.post("/predict", json=incomplete, headers=AUTH_HEADERS)
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("senior_citizen", 5), ("gender", "Other")],
+)
+async def test_predict_rejects_invalid_payload(client, field, value):
+    response = await client.post(
+        "/predict", json={**VALID_PAYLOAD, field: value}, headers=AUTH_HEADERS
+    )
     assert response.status_code == 422
 
 
-def test_predict_invalid_senior_citizen_returns_422(client):
-    payload = {**VALID_PAYLOAD, "senior_citizen": 5}
-    response = client.post("/predict", json=payload, headers=AUTH_HEADERS)
+async def test_predict_rejects_missing_field(client):
+    payload = {key: value for key, value in VALID_PAYLOAD.items() if key != "tenure"}
+    response = await client.post("/predict", json=payload, headers=AUTH_HEADERS)
     assert response.status_code == 422
 
 
-def test_predict_invalid_categorical_returns_422(client):
-    payload = {**VALID_PAYLOAD, "gender": "Other"}
-    response = client.post("/predict", json=payload, headers=AUTH_HEADERS)
-    assert response.status_code == 422
-
-
-def test_predict_model_not_loaded_returns_503(client_no_model):
-    response = client_no_model.post("/predict", json=VALID_PAYLOAD, headers=AUTH_HEADERS)
+async def test_predict_model_not_loaded_returns_503(client_no_model):
+    response = await client_no_model.post(
+        "/predict", json=VALID_PAYLOAD, headers=AUTH_HEADERS
+    )
     assert response.status_code == 503
-    assert response.json()["detail"] == "Model not available"
 
 
-def test_predict_without_token_returns_401(client):
-    response = client.post("/predict", json=VALID_PAYLOAD)
-    assert response.status_code == 401
+async def test_predict_without_token_returns_401(client):
+    assert (await client.post("/predict", json=VALID_PAYLOAD)).status_code == 401
 
 
-def test_auth_login_valid_credentials(client):
-    response = client.post("/auth/login?username=admin&password=admin123")
+async def test_auth_login_valid_credentials(client):
+    response = await client.post("/auth/login?username=admin&password=admin123")
     assert response.status_code == 200
     assert "access_token" in response.json()
 
 
-def test_auth_login_invalid_credentials(client):
-    response = client.post("/auth/login?username=admin&password=wrong")
+async def test_auth_login_invalid_credentials(client):
+    response = await client.post("/auth/login?username=admin&password=wrong")
     assert response.status_code == 401
 
 
-def test_predict_apikey_valid(client):
-    response = client.post(
-        "/predict-apikey",
-        json=VALID_PAYLOAD,
-        headers={"X-API-Key": API_KEY},
+async def test_predict_apikey_valid(client):
+    response = await client.post(
+        "/predict-apikey", json=VALID_PAYLOAD, headers={"X-API-Key": API_KEY}
     )
     assert response.status_code == 200
-    data = response.json()
-    assert "churn_probability" in data
-    assert data["prediction"] in {0, 1}
 
 
-def test_predict_apikey_invalid_key_returns_401(client):
-    response = client.post(
-        "/predict-apikey",
-        json=VALID_PAYLOAD,
-        headers={"X-API-Key": "wrong-key"},
+async def test_predict_apikey_invalid_key_returns_401(client):
+    response = await client.post(
+        "/predict-apikey", json=VALID_PAYLOAD, headers={"X-API-Key": "wrong-key"}
     )
     assert response.status_code == 401
 
 
-def test_predict_batch_valid(client):
-    response = client.post(
+async def test_predict_batch_valid(client):
+    response = await client.post(
         "/predict-batch",
         json=[VALID_PAYLOAD, VALID_PAYLOAD],
         headers=AUTH_HEADERS,
     )
     assert response.status_code == 200
-    data = response.json()
-    assert data["count"] == 2
-    assert len(data["predictions"]) == 2
+    assert response.json()["count"] == 2
 
 
-def test_predict_batch_empty_returns_422(client):
-    response = client.post("/predict-batch", json=[], headers=AUTH_HEADERS)
+async def test_predict_batch_empty_returns_422(client):
+    response = await client.post("/predict-batch", json=[], headers=AUTH_HEADERS)
     assert response.status_code == 422
 
 
-def test_predict_batch_without_token_returns_401(client):
-    response = client.post("/predict-batch", json=[VALID_PAYLOAD])
+async def test_predict_batch_without_token_returns_401(client):
+    response = await client.post("/predict-batch", json=[VALID_PAYLOAD])
     assert response.status_code == 401

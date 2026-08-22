@@ -1,7 +1,7 @@
+from sklearn.base import clone
 from sklearn.dummy import DummyClassifier
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import classification_report
 from sklearn.model_selection import StratifiedKFold, cross_validate
 from sklearn.pipeline import Pipeline
 
@@ -44,32 +44,24 @@ def train_baseline(
     pipeline: Pipeline,
     X_train,
     y_train,
-    X_test,
-    y_test,
     model_name: str,
     params: dict | None = None,
 ) -> dict:
-    """Treina um baseline com cross-validation e loga métricas no MLflow.
-
-    Executa validação cruzada estratificada com CV_FOLDS folds, treina o modelo
-    no conjunto completo de treino, avalia no conjunto de teste e registra
-    todos os resultados no MLflow como nested run.
+    """Seleciona um candidato exclusivamente por cross-validation no treino.
 
     Args:
         pipeline: Pipeline sklearn completo (pré-processamento + modelo).
         X_train: Features de treino.
         y_train: Labels de treino.
-        X_test: Features de teste.
-        y_test: Labels de teste.
         model_name: Nome do modelo para identificação no MLflow.
         params: Hiperparâmetros adicionais para logar no MLflow.
 
     Returns:
-        Dicionário com 'pipeline' (modelo treinado) e 'metrics' (métricas de teste).
+        Pipeline ajustado no treino e médias das métricas de CV.
 
     Example:
-        >>> result = train_baseline(pipeline, X_train, y_train, X_test, y_test, "logistic_regression")
-        >>> print(f"F1: {result['metrics']['f1']:.4f}")
+        >>> result = train_baseline(pipeline, X_train, y_train, "logistic_regression")
+        >>> print(f"F1 CV: {result['cv_metrics']['f1']:.4f}")
     """
     import mlflow
     import mlflow.sklearn
@@ -82,25 +74,32 @@ def train_baseline(
         cv = StratifiedKFold(n_splits=CV_FOLDS, shuffle=True, random_state=RANDOM_STATE)
         cv_results = cross_validate(pipeline, X_train, y_train, cv=cv, scoring=SCORING)
 
-        for metric in SCORING:
-            mlflow.log_metric(f"cv_{metric}_mean", cv_results[f"test_{metric}"].mean())
+        cv_metrics = {
+            metric: float(cv_results[f"test_{metric}"].mean()) for metric in SCORING
+        }
+        for metric, value in cv_metrics.items():
+            mlflow.log_metric(f"cv_{metric}_mean", value)
 
         pipeline.fit(X_train, y_train)
-        y_pred = pipeline.predict(X_test)
-        y_prob = pipeline.predict_proba(X_test)[:, 1] if hasattr(pipeline, "predict_proba") else None
-
-        metrics = compute_metrics(y_test, y_pred, y_prob)
-        for name, val in metrics.items():
-            mlflow.log_metric(f"test_{name}", val)
-
         mlflow.sklearn.log_model(pipeline, "model")
         logger.info(
-            "{} — Test F1: {:.4f} | AUC: {:.4f}",
-            model_name, metrics["f1"], metrics.get("auc_roc", 0),
+            "{} — CV F1: {:.4f} | AUC: {:.4f}",
+            model_name,
+            cv_metrics["f1"],
+            cv_metrics["roc_auc"],
         )
-        logger.info("{}", classification_report(y_test, y_pred))
 
-    return {"pipeline": pipeline, "metrics": metrics}
+    return {"pipeline": pipeline, "cv_metrics": cv_metrics}
+
+
+def refit_and_evaluate(
+    pipeline: Pipeline, X_development, y_development, X_test, y_test
+) -> tuple[Pipeline, dict[str, float]]:
+    """Refita o campeão no desenvolvimento e avalia o teste uma única vez."""
+    fitted = clone(pipeline).fit(X_development, y_development)
+    predictions = fitted.predict(X_test)
+    probabilities = fitted.predict_proba(X_test)[:, 1]
+    return fitted, compute_metrics(y_test, predictions, probabilities)
 
 
 def build_baselines() -> list:
@@ -114,7 +113,7 @@ def build_baselines() -> list:
 
     Example:
         >>> for name, pipeline, params in build_baselines():
-        ...     result = train_baseline(pipeline, X_train, y_train, X_test, y_test, name, params)
+        ...     result = train_baseline(pipeline, X_train, y_train, name, params)
     """
     from src.data.preprocessing import build_full_pipeline
 

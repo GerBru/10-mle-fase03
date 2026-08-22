@@ -1,0 +1,8 @@
+{
+  "alias": "champion",
+  "baseline_name": "logistic_regression",
+  "name": "churn-classifier",
+  "run_id": "bab92e0ef4824a6181bd101a57e7dff3",
+  "source": "models:/m-517d908b3602469bb90e9fc8e86146d4",
+  "version": "1"
+}

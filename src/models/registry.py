@@ -48,6 +48,7 @@ def log_and_register_champion(
     metrics: dict[str, float] | None = None,
     model_name: str = REGISTERED_MODEL_NAME,
     alias: str = CHAMPION_ALIAS,
+    required: bool = True,
 ) -> ModelVersion | None:
     """Loga o melhor baseline sklearn e o promove no Model Registry.
 
@@ -67,8 +68,11 @@ def log_and_register_champion(
         alias: Alias de promoção atribuído à nova versão.
 
     Returns:
-        A ``ModelVersion`` criada, ou ``None`` se o modelo for inválido ou o
-        Registry estiver indisponível.
+        A versão criada ou já existente para o mesmo artefato.
+
+    Raises:
+        MlflowException: quando a promoção obrigatória não pode ser concluída.
+        ValueError: quando não há modelo campeão.
 
     Example:
         >>> mv = log_and_register_champion(pipe, X_test_df, baseline_name="random_forest")
@@ -76,8 +80,7 @@ def log_and_register_champion(
         '1'
     """
     if model is None:
-        logger.warning("No champion model to register — skipping Registry step.")
-        return None
+        raise ValueError("No champion model available for Registry promotion")
 
     with mlflow.start_run(run_name="sklearn_champion", nested=True):
         mlflow.set_tag("model_type", "classical_ml")
@@ -101,7 +104,14 @@ def log_and_register_champion(
         )
         logger.info("Champion model logged at {}", model_info.model_uri)
 
-        return _promote(model_info.model_uri, model_name, alias, baseline_name, metrics)
+        return _promote(
+            model_info.model_uri,
+            model_name,
+            alias,
+            baseline_name,
+            metrics,
+            required,
+        )
 
 
 def _promote(
@@ -110,6 +120,7 @@ def _promote(
     alias: str,
     baseline_name: str,
     metrics: dict[str, float] | None,
+    required: bool,
 ) -> ModelVersion | None:
     """Cria a versão no Registry e atribui alias, tag de estágio e descrição.
 
@@ -121,11 +132,13 @@ def _promote(
         metrics: Métricas de teste, usadas na descrição.
 
     Returns:
-        A ``ModelVersion`` criada, ou ``None`` em caso de falha do Registry.
+        A versão promovida.
     """
     try:
-        version = mlflow.register_model(model_uri, model_name)
         client = MlflowClient()
+        version = _existing_version(client, model_name, model_uri)
+        if version is None:
+            version = mlflow.register_model(model_uri, model_name)
         client.set_registered_model_alias(model_name, alias, version.version)
         client.set_model_version_tag(
             model_name, version.version, STAGE_TAG_KEY, STAGE_TAG_VALUE
@@ -140,12 +153,25 @@ def _promote(
             "Model Registry unavailable — model logged but not promoted. "
             "Is the tracking server running with a database backend?"
         )
+        if required:
+            raise
         return None
 
     logger.info(
         "Registered {} v{} and promoted to @{}", model_name, version.version, alias
     )
     return version
+
+
+def _existing_version(
+    client: MlflowClient, model_name: str, model_uri: str
+) -> ModelVersion | None:
+    """Encontra versão já associada ao mesmo artefato para evitar duplicidade."""
+    try:
+        versions = client.search_model_versions(f"name='{model_name}'")
+    except MlflowException:
+        return None
+    return next((version for version in versions if version.source == model_uri), None)
 
 
 def _build_description(baseline_name: str, metrics: dict[str, float] | None) -> str:

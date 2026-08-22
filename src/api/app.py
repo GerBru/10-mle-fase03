@@ -63,7 +63,13 @@ logger = get_logger(__name__)
 user_repo = InMemoryUserRepository()
 
 # ── Estado da aplicação ───────────────────────────────────────────────────────
-_state: dict = {"pipeline": None, "model": None, "input_dim": None}
+_state: dict = {
+    "pipeline": None,
+    "model": None,
+    "input_dim": None,
+    "model_source": None,
+    "model_metadata": {},
+}
 
 BATCH_INPUT_EXAMPLE = [
     {
@@ -217,8 +223,8 @@ async def observability_middleware(request: Request, call_next):
 
 
 # ── Dependency: modelo disponível ─────────────────────────────────────────────
-def _require_model(request: Request) -> PredictionService:
-    if _state["model"] is None or _state["pipeline"] is None:
+async def _require_model(request: Request) -> PredictionService:
+    if _state["model"] is None:
         raise HTTPException(status_code=503, detail="Model not available")
     return PredictionService(pipeline=_state["pipeline"], model=_state["model"])
 
@@ -229,16 +235,21 @@ ModelState = Annotated[PredictionService, Depends(_require_model)]
 # ── Endpoints públicos ────────────────────────────────────────────────────────
 @app.get("/health", response_model=HealthOutput, tags=["Monitoring"])
 async def health():
+    metadata = _state.get("model_metadata") or {}
     return HealthOutput(
         status="ok",
         model_loaded=_state["model"] is not None,
         version=settings.api_version,
+        model_source=_state.get("model_source"),
+        model_name=metadata.get("name"),
+        model_version=metadata.get("version"),
+        model_alias=metadata.get("alias"),
     )
 
 
 @app.get("/ready", tags=["Monitoring"])
 async def ready():
-    if _state["pipeline"] is None or _state["model"] is None:
+    if _state["model"] is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
     return {"status": "ready"}
 

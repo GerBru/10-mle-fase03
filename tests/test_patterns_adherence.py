@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 
 from src.api.model_loader import (
+    ChampionModelRepository,
     LocalModelRepository,
     build_model_repository,
 )
@@ -36,7 +37,7 @@ def test_factory_retorna_implementacao_do_protocol():
     isinstance, e a conformidade formal já é garantida em tempo de análise
     estática pela anotação de retorno da factory.
     """
-    repo = build_model_repository()
+    repo = build_model_repository(model_source="mlp")
 
     assert callable(getattr(repo, "load", None))
     assert isinstance(repo, LocalModelRepository)
@@ -44,9 +45,16 @@ def test_factory_retorna_implementacao_do_protocol():
 
 def test_factory_aceita_diretorio_explicito(tmp_path):
     """Permite apontar para artefatos de teste sem alterar a configuração global."""
-    repo = build_model_repository(tmp_path)
+    repo = build_model_repository(tmp_path, model_source="mlp")
 
     assert repo._dir == tmp_path
+
+
+def test_factory_seleciona_champion_para_fase2(tmp_path):
+    """O modo da Fase 2 carrega o mesmo artefato promovido no Registry."""
+    repo = build_model_repository(tmp_path, model_source="champion")
+
+    assert isinstance(repo, ChampionModelRepository)
 
 
 def test_api_nao_instancia_repositorio_concreto():

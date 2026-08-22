@@ -33,7 +33,13 @@ class LocalModelRepository:
     def load(self) -> dict:
         pipeline = self._load_pipeline()
         model, input_dim = self._load_model()
-        return {"pipeline": pipeline, "model": model, "input_dim": input_dim}
+        return {
+            "pipeline": pipeline,
+            "model": model,
+            "input_dim": input_dim,
+            "model_source": "mlp",
+            "model_metadata": {"framework": "pytorch"},
+        }
 
     def _load_pipeline(self):
         pipeline_path = self._dir / "preprocessor.joblib"
@@ -75,7 +81,32 @@ class LocalModelRepository:
         return None, [64, 32, 16]
 
 
-def build_model_repository(models_dir: Path | None = None) -> ModelRepository:
+class ChampionModelRepository:
+    """Carrega o pipeline sklearn que foi promovido como champion no treino."""
+
+    def __init__(self, models_dir: Path) -> None:
+        self._dir = models_dir
+
+    def load(self) -> dict:
+        model_path = self._dir / "best_baseline.joblib"
+        evidence_path = self._dir / "registry.json"
+        if not model_path.exists() or not evidence_path.exists():
+            raise FileNotFoundError(
+                "Champion artifacts missing; run the DVC training pipeline first"
+            )
+        evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+        return {
+            "pipeline": None,
+            "model": joblib.load(model_path),
+            "input_dim": None,
+            "model_source": "champion",
+            "model_metadata": evidence,
+        }
+
+
+def build_model_repository(
+    models_dir: Path | None = None, model_source: str | None = None
+) -> ModelRepository:
     """Constrói a implementação de `ModelRepository` usada pela aplicação.
 
     Ponto único de escolha da origem dos artefatos. A API depende apenas do
@@ -89,4 +120,8 @@ def build_model_repository(models_dir: Path | None = None) -> ModelRepository:
     Returns:
         Implementação de `ModelRepository` pronta para uso.
     """
-    return LocalModelRepository(models_dir or Path(settings.models_dir))
+    artifact_dir = models_dir or Path(settings.models_dir)
+    source = model_source or settings.model_source
+    if source == "champion":
+        return ChampionModelRepository(artifact_dir)
+    return LocalModelRepository(artifact_dir)

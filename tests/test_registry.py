@@ -156,32 +156,54 @@ def test_loads_champion_and_predicts_on_raw_data(
     assert set(predictions).issubset({0, 1})
 
 
-def test_returns_none_when_model_is_missing(tracking_backend, raw_features):
-    """Sem modelo campeão, o módulo não quebra o treino."""
-    with mlflow.start_run():
-        assert log_and_register_champion(
+def test_raises_when_model_is_missing(tracking_backend, raw_features):
+    """Sem campeão, a etapa obrigatória interrompe o pipeline."""
+    with mlflow.start_run(), pytest.raises(ValueError, match="No champion model"):
+        log_and_register_champion(
             None, raw_features, baseline_name="", model_name=MODEL_NAME
-        ) is None
+        )
 
 
-def test_returns_none_when_registry_unavailable(
+def test_raises_when_required_registry_is_unavailable(
     tracking_backend, fitted_pipeline, raw_features, monkeypatch
 ):
-    """Falha do Registry é capturada: o modelo é logado, mas não promovido."""
+    """Falha do Registry obrigatório interrompe o pipeline."""
 
     def _raise(*args, **kwargs):
         raise MlflowException("registry unavailable")
 
     monkeypatch.setattr(mlflow, "register_model", _raise)
 
-    with mlflow.start_run():
-        version = log_and_register_champion(
+    with (
+        mlflow.start_run(),
+        pytest.raises(MlflowException, match="registry unavailable"),
+    ):
+        log_and_register_champion(
             fitted_pipeline,
             raw_features,
             baseline_name="logistic_regression",
             model_name=MODEL_NAME,
         )
 
-    assert version is None
     with pytest.raises(MlflowException):
         tracking_backend.get_registered_model(MODEL_NAME)
+
+
+def test_optional_registry_failure_returns_none(
+    tracking_backend, fitted_pipeline, raw_features, monkeypatch
+):
+    """Ambientes exploratórios podem optar explicitamente por promoção opcional."""
+
+    def _raise(*args, **kwargs):
+        raise MlflowException("registry unavailable")
+
+    monkeypatch.setattr(mlflow, "register_model", _raise)
+    with mlflow.start_run():
+        version = log_and_register_champion(
+            fitted_pipeline,
+            raw_features,
+            baseline_name="logistic_regression",
+            model_name=MODEL_NAME,
+            required=False,
+        )
+    assert version is None

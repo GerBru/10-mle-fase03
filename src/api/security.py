@@ -51,7 +51,7 @@ def create_access_token(username: str, role: str) -> str:
     return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
 
 
-def verify_token(
+async def verify_token(
     credentials: HTTPAuthorizationCredentials = Depends(http_bearer),
 ) -> dict:
     if not credentials:
@@ -72,7 +72,7 @@ def verify_token(
         ) from exc
 
 
-def verify_api_key(x_api_key: str | None = Header(default=None)) -> str:
+async def verify_api_key(x_api_key: str | None = Header(default=None)) -> str:
     if x_api_key is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="API Key ausente.")
     if x_api_key != API_KEY:

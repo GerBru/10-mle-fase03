@@ -36,8 +36,8 @@ class PredictionService:
 
     def predict(self, cliente: ClienteInput) -> tuple[float, int, str]:
         """Retorna (churn_probability, prediction, risk_level) para um cliente."""
-        X = self.pipeline.transform(_to_dataframe(cliente)).astype(np.float32)
-        prob = float(predict_proba(self.model, X)[0])
+        probs = self._predict_probabilities(_to_dataframe(cliente))
+        prob = float(probs[0])
         prediction = int(prob >= 0.5)
         risk = self.risk_classifier.classify(prob)
         return prob, prediction, risk
@@ -45,8 +45,7 @@ class PredictionService:
     def predict_batch(self, clientes: list[ClienteInput]) -> list[PredictionOutput]:
         """Retorna lista de PredictionOutput para múltiplos clientes."""
         df = pd.concat([_to_dataframe(c) for c in clientes], ignore_index=True)
-        X = self.pipeline.transform(df).astype(np.float32)
-        probs = predict_proba(self.model, X)
+        probs = self._predict_probabilities(df)
         return [
             PredictionOutput(
                 churn_probability=round(float(p), 4),
@@ -55,6 +54,13 @@ class PredictionService:
             )
             for p in probs
         ]
+
+    def _predict_probabilities(self, frame: pd.DataFrame) -> np.ndarray:
+        """Executa MLP legada ou pipeline sklearn champion pela mesma interface."""
+        if self.pipeline is None:
+            return self.model.predict_proba(frame)[:, 1]
+        transformed = self.pipeline.transform(frame).astype(np.float32)
+        return predict_proba(self.model, transformed)
 
 
 def _to_dataframe(cliente: ClienteInput) -> pd.DataFrame:
