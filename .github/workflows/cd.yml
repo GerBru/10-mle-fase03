@@ -26,14 +26,16 @@ jobs:
           python-version: "3.12"
 
       - name: Baixa dataset e modelos versionados pelo DVC
-        # Os artefatos de models/ e data/raw/ nao ficam no git (ver dvc.yaml).
-        # O build de Docker abaixo depende deles existirem no contexto local.
-        # NOTA: o remote atual (../dvc-storage-fase2) e uma pasta local, nao
-        # alcancavel por este runner -- este passo falha propositalmente ate
-        # o remote ser migrado para um destino acessivel pela CI (ex.: S3).
-        # Preferimos falhar aqui a publicar uma imagem sem os artefatos do modelo.
+        env:
+          DVC_GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.DVC_GDRIVE_SERVICE_ACCOUNT_JSON }}
         run: |
+          test -n "$DVC_GDRIVE_SERVICE_ACCOUNT_JSON"
           uv sync --extra train --frozen
+          credential_file="$RUNNER_TEMP/dvc-gdrive-service-account.json"
+          printf '%s' "$DVC_GDRIVE_SERVICE_ACCOUNT_JSON" > "$credential_file"
+          chmod 600 "$credential_file"
+          uv run dvc remote modify --local gdrive gdrive_use_service_account true
+          uv run dvc remote modify --local gdrive gdrive_service_account_json_file_path "$credential_file"
           uv run dvc pull
 
       - name: Log in no GitHub Container Registry
