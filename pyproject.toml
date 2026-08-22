@@ -97,6 +97,9 @@ python_functions = ["test_*"]
 source = ["src"]
 omit = ["tests/*", "notebooks/*"]
 
+[tool.coverage.report]
+fail_under = 80
+
 [tool.uv]
 # torch-backend is not a valid uv field; CPU-only torch is handled via
 # the sys_platform conditional in [project.dependencies]
