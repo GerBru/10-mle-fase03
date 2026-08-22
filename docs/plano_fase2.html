@@ -409,7 +409,7 @@
       <span><b>Hoje</b> 15/08/2026</span>
       <span><b>Entrega alvo</b> 01/09/2026</span>
       <span><b>Dataset</b> Telco Customer Churn (alternativa aceita pelo edital)</span>
-      <span><b>Status</b> Semana 1 concluída (6/6 commits) — próxima: Semana 2</span>
+      <span><b>Status</b> Todos os critérios obrigatórios do edital atendidos — falta vídeo STAR e 2 ajustes menores</span>
     </div>
   </header>
 
@@ -418,9 +418,9 @@
     <p class="section-note">A pasta <code style="font-family:var(--font-mono);background:var(--surface-2);padding:.1em .35em;border-radius:4px;">10-machine-learning-engineering-02</code> é hoje uma cópia integral do código da Fase 1 — confirmado por <code style="font-family:var(--font-mono);background:var(--surface-2);padding:.1em .35em;border-radius:4px;">diff -rq</code> entre os dois repositórios: nenhum arquivo de <code style="font-family:var(--font-mono);background:var(--surface-2);padding:.1em .35em;border-radius:4px;">src/</code> difere. O trabalho da Fase 2 é aditivo sobre essa base.</p>
     <div class="diag-grid">
       <div class="diag-card">
-        <span class="pill ok">Presente</span>
-        <h3>MLflow Tracking</h3>
-        <p>Params, métricas e artefatos já logados em <code>src/training/train.py</code> para baselines e MLP. Falta apenas o Model Registry.</p>
+        <span class="pill ok">Implementado</span>
+        <h3>MLflow Tracking + Registry</h3>
+        <p>Tracking completo e <code>src/models/registry.py</code> (novo, do time) promove o melhor baseline com alias <code>@champion</code>, assinatura inferida e 6 testes dedicados.</p>
       </div>
       <div class="diag-card">
         <span class="pill ok">Implementado</span>
@@ -435,7 +435,12 @@
       <div class="diag-card">
         <span class="pill ok">Presente</span>
         <h3>Clean Code</h3>
-        <p>Módulos curtos, type hints e docstrings já trabalhados na Fase 1 (ver <code>docs/refactoring_report.md</code>).</p>
+        <p>Módulos curtos, type hints e docstrings já trabalhados na Fase 1 (ver <code>docs/refactoring_report.md</code>) + seção de Padrões de Projeto (GoF + ML) documentada no README.</p>
+      </div>
+      <div class="diag-card">
+        <span class="pill ok">Implementado</span>
+        <h3>Config &amp; Observabilidade</h3>
+        <p><code>APP_ENV</code> separa segredo de configuração (recusa placeholder em produção); factory <code>build_model_repository</code>; estatísticas de referência para drift (<code>reference_stats.npz</code>) — tudo do time, fora do escopo original desta semana.</p>
       </div>
     </div>
   </section>
@@ -468,7 +473,7 @@
             <td>Clean code e estrutura</td>
             <td class="peso">20%</td>
             <td><span class="status-ok">atende</span></td>
-            <td>Atualizar README e metadados que ainda citam "Fase 1".</td>
+            <td>Nenhum — README atualizado para Fase 2, padrões de projeto documentados.</td>
           </tr>
           <tr>
             <td>Reprodutibilidade</td>
@@ -497,8 +502,8 @@
           <tr>
             <td>MLflow + Registry</td>
             <td class="peso">20%</td>
-            <td><span class="status-gap">parcial</span></td>
-            <td>Tracking pronto; falta registrar o melhor modelo no Model Registry e promover o estágio.</td>
+            <td><span class="status-ok">atende</span></td>
+            <td>Concluído pelo time (PRs #5/#6) — <code style="font-family:var(--font-mono);">src/models/registry.py</code> promove o campeão com alias <code style="font-family:var(--font-mono);">@champion</code>.</td>
           </tr>
         </tbody>
       </table>
@@ -506,15 +511,32 @@
   </section>
 
   <section>
-    <h2>Achado da validação pós-DVC</h2>
-    <p class="section-note">Depois de fechar a Semana 1, validamos a aplicação inteira de ponta a ponta — testes, API local com artefatos reais e build de Docker a partir de um clone limpo (simulando o runner de CI/CD).</p>
-    <div class="finding">
-      <span class="tag">Regressão de infraestrutura — corrigida</span>
-      <h3>Docker/CD publicava imagem sem o modelo carregado</h3>
-      <p>Ao mover <code style="font-family:var(--font-mono);">models/preprocessor.joblib</code>, <code style="font-family:var(--font-mono);">best_baseline.joblib</code> e <code style="font-family:var(--font-mono);">model_config.json</code> do git para o DVC (Atividade 5), um clone limpo — exatamente o que o runner do GitHub Actions vê — passou a receber uma pasta <code style="font-family:var(--font-mono);">models/</code> vazia. O <code style="font-family:var(--font-mono);">docker build</code> continuava passando e o container subia normal, só que servindo <code style="font-family:var(--font-mono);">model_loaded: false</code> — uma falha silenciosa em produção.</p>
-      <p><strong>Já existia antes, parcialmente:</strong> testamos o commit anterior a toda a Semana 1 e o mesmo sintoma já ocorria — <code style="font-family:var(--font-mono);">mlp_model.pt</code> nunca esteve no git (já era ignorado desde a Fase 1). O trabalho desta semana ampliou o problema de 1 para 3 arquivos ausentes, mas não o criou.</p>
-      <p><strong>Correção aplicada:</strong> o <code style="font-family:var(--font-mono);">Dockerfile</code> agora falha o build se os três artefatos não estiverem no contexto, e o workflow de CD roda <code style="font-family:var(--font-mono);">dvc pull</code> antes de construir a imagem. Como o remote atual do DVC é uma pasta local (decisão da Semana 1), inacessível pelo runner, o CD passa a falhar alto — em vez de publicar uma imagem quebrada silenciosamente.</p>
-      <p class="verdict">Pendência em aberto: o deploy automático via CD fica bloqueado até o remote do DVC migrar para algo acessível pela CI (ex.: S3). Decisão de infraestrutura para revisar na Semana 2 ou 3.</p>
+    <h2>Reavaliação — trabalho do time desde a Semana 1</h2>
+    <p class="section-note">Depois do merge da Semana 1 (PR #4), quatro PRs do time (#5–#8) fecharam praticamente todo o restante do cronograma original. Este é o estado real do repositório em <code style="font-family:var(--font-mono);">develop</code> hoje, não mais uma projeção.</p>
+    <div class="diag-grid">
+      <div class="diag-card">
+        <span class="pill ok">PR #5/#6</span>
+        <h3>MLflow Model Registry</h3>
+        <p><code>src/models/registry.py</code> promove o melhor baseline com alias <code>@champion</code>, assinatura inferida e <code>input_example</code>. 6 testes com backend SQLite isolado.</p>
+      </div>
+      <div class="diag-card">
+        <span class="pill ok">PR #7/#8</span>
+        <h3>Config, patterns e drift</h3>
+        <p><code>APP_ENV</code> separa segredo de config (recusa placeholder em prod), factory <code>build_model_repository</code>, estatísticas de referência para drift, README com seção de Padrões de Projeto. 15 testes novos.</p>
+      </div>
+      <div class="diag-card">
+        <span class="pill warn">Ainda aberto</span>
+        <h3>3 pendências, nenhuma bloqueante para a nota</h3>
+        <p>Vídeo STAR (obrigatório, roteiro já pronto), ajuste de <code>models/results.json</code> vs. <code>.gitignore</code>, e migração do remote do DVC (desbloqueia só o deploy <em>opcional</em> em nuvem).</p>
+      </div>
+    </div>
+    <div class="finding" style="margin-top:1rem;">
+      <span class="tag">O que falta, em ordem de prioridade</span>
+      <h3>Nenhum critério obrigatório do edital está em aberto</h3>
+      <p><strong>1. Vídeo STAR (obrigatório para a entrega).</strong> O roteiro já existe em <code style="font-family:var(--font-mono);">docs/technical_overview.md</code>, mas a gravação e o link no README ainda não foram feitos — é o único item que bloqueia a entrega de verdade.</p>
+      <p><strong>2. <code style="font-family:var(--font-mono);">models/results.json</code> ainda está no <code style="font-family:var(--font-mono);">.gitignore</code></strong>, mas o <code style="font-family:var(--font-mono);">dvc.yaml</code> o declara como métrica com <code style="font-family:var(--font-mono);">cache: false</code> — ou seja, deveria ser versionado pelo git (não pelo DVC) para <code style="font-family:var(--font-mono);">dvc metrics diff</code> funcionar entre commits. Ajuste pequeno, já mapeado pelo time na tabela de etapas do README.</p>
+      <p><strong>3. Remote do DVC continua local</strong> (<code style="font-family:var(--font-mono);">../dvc-storage-fase2</code>), então o <code style="font-family:var(--font-mono);">dvc pull</code> no workflow de CD segue falhando por design — isso bloqueia apenas o deploy automático em nuvem, que o edital marca como <strong>entrega opcional</strong>.</p>
+      <p class="verdict">Achado menor: <code style="font-family:var(--font-mono);">ruff check</code> aponta 1 import fora de ordem em <code style="font-family:var(--font-mono);">src/pipeline/preprocess.py</code> (introduzido pela integração do drift detection) — cosmético, corrigível com <code style="font-family:var(--font-mono);">ruff check --fix</code>.</p>
     </div>
   </section>
 
@@ -562,23 +584,24 @@
         <div class="week-head">
           <span class="dates">21–27 ago</span>
           <h3>Semana 2 — Registry, testes e docs</h3>
+          <span class="pill ok" style="margin:0;">Concluída pelo time</span>
         </div>
         <ul class="task-list">
-          <li class="task">
-            <span class="date">sex 21/08</span>
-            <div class="body"><strong>Decidir remote do DVC para CI</strong><span>Pendência aberta na validação da Semana 1: o CD está bloqueado sem um remote acessível pelo GitHub Actions. Definir se migra para S3 ou se o deploy segue manual por enquanto.</span></div>
+          <li class="task done">
+            <span class="date"><span class="check">✓</span>PR #5/#6</span>
+            <div class="body"><strong>MLflow Model Registry</strong><span><code>src/models/registry.py</code> registra e promove o melhor baseline com alias <code>@champion</code>; assinatura inferida + <code>input_example</code>.<span class="commit">61085a1 · 702c386</span></span></div>
           </li>
-          <li class="task">
-            <span class="date">seg–ter 24–25/08</span>
-            <div class="body"><strong>MLflow Model Registry</strong><span>Registrar o melhor modelo (<code>best_baseline</code>) via <code>log_model(registered_model_name=...)</code> e promover o estágio/alias após a run vencedora.</span></div>
+          <li class="task done">
+            <span class="date"><span class="check">✓</span>PR #5/#6</span>
+            <div class="body"><strong>Testes automatizados</strong><span>6 testes do Registry com backend SQLite isolado + 15 testes de configuração e aderência aos padrões (23 novos ao todo — 52 → 75).<span class="commit">e0547ae</span></span></div>
           </li>
-          <li class="task">
-            <span class="date">qua 26/08</span>
-            <div class="body"><strong>Testes automatizados</strong><span>Cobrir o novo estágio de preprocess e a chamada ao Registry; incluir no CI existente.</span></div>
+          <li class="task done">
+            <span class="date"><span class="check">✓</span>PR #7/#8</span>
+            <div class="body"><strong>Atualizar README e docs/</strong><span>Referências à "Fase 1" removidas; documenta <code>dvc repro</code>, MLflow Registry, <code>APP_ENV</code> e padrões de projeto (GoF + ML).<span class="commit">e7ec0fd</span></span></div>
           </li>
-          <li class="task">
-            <span class="date">qui 27/08</span>
-            <div class="body"><strong>Atualizar README e docs/</strong><span>Remover referências à "Fase 1", documentar <code>dvc repro</code>, <code>dvc pull</code>, MLflow UI e o fluxo do Registry.</span></div>
+          <li class="task done">
+            <span class="date"><span class="check">✓</span>PR #7/#8 <em style="font-style:normal;opacity:.75;">(extra)</em></span>
+            <div class="body"><strong>Config, factory e drift</strong><span><code>APP_ENV</code> separa segredo de config; factory <code>build_model_repository</code>; estatísticas de referência para drift (<code>reference_stats.npz</code>) — além do escopo original desta semana.<span class="commit">c64e4ec · 6361aa0 · 9d14f70</span></span></div>
           </li>
         </ul>
       </div>
@@ -586,20 +609,28 @@
       <div class="week">
         <div class="week-head">
           <span class="dates">28 ago – 01 set</span>
-          <h3>Semana 3 — Revisão e entrega</h3>
+          <h3>Semana 3 — O que falta de verdade</h3>
         </div>
         <ul class="task-list">
           <li class="task">
-            <span class="date">sex 28/08</span>
-            <div class="body"><strong>Auditoria de Clean Code</strong><span>Checar funções acima de ~20 linhas nos módulos tocados na semana 1–2; rodar <code>ruff check</code>.</span></div>
+            <span class="date">seg 17/08</span>
+            <div class="body"><strong>Corrigir results.json vs .gitignore</strong><span><code>models/results.json</code> é declarado métrica (<code>cache: false</code>) no <code>dvc.yaml</code>, mas segue ignorado pelo git — remover do <code>.gitignore</code> e commitar para <code>dvc metrics diff</code> funcionar entre commits.</span></div>
+          </li>
+          <li class="task">
+            <span class="date">seg 17/08</span>
+            <div class="body"><strong>Fix cosmético de lint</strong><span><code>ruff check --fix</code> em <code>src/pipeline/preprocess.py</code> — 1 import fora de ordem (introduzido pela integração do drift detection).</span></div>
+          </li>
+          <li class="task">
+            <span class="date">18–20/08</span>
+            <div class="body"><strong>Decidir remote do DVC para CI</strong><span>Só bloqueia o deploy <em>opcional</em> em nuvem — não é requisito obrigatório do edital. Definir se migra para S3 ou se o deploy segue manual.</span></div>
           </li>
           <li class="task">
             <span class="date">sáb 29/08</span>
-            <div class="body"><strong>Roteiro do vídeo STAR</strong><span>Situation / Task / Action / Result — 5 minutos, cobrindo decisões de arquitetura, Docker, DVC e MLflow.</span></div>
+            <div class="body"><strong>Roteiro do vídeo STAR</strong><span>Já existe rascunho em <code>docs/technical_overview.md</code> — revisar e ajustar para 5 minutos, cobrindo Docker, DVC e MLflow Registry.</span></div>
           </li>
           <li class="task">
             <span class="date">dom 30/08</span>
-            <div class="body"><strong>Gravação do vídeo</strong><span>Demonstrar o pipeline rodando ponta a ponta: <code>dvc repro</code>, <code>docker build</code>, MLflow UI com o modelo registrado.</span></div>
+            <div class="body"><strong>Gravação do vídeo</strong><span>Demonstrar o pipeline rodando ponta a ponta: <code>dvc repro</code>, <code>docker build</code>, MLflow UI com o modelo promovido no Registry.</span></div>
           </li>
           <li class="task">
             <span class="date">seg 31/08</span>
