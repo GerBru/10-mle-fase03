@@ -281,7 +281,7 @@ O dataset é versionado com DVC — o git rastreia apenas o ponteiro
 
 | Remote   | Onde                                   | Uso                                              |
 | -------- | -------------------------------------- | ------------------------------------------------ |
-| `local` (padrão) | Pasta local (`../dvc-storage-fase2`)   | Rápido e offline, só na sua máquina              |
+| `local` (padrão) | Pasta local (`../../dvc-storage-fase2`)   | Rápido e offline, só na sua máquina              |
 | `gdrive` | Google Drive (`gdrive://<FOLDER_ID>`), OAuth | Compartilhável entre o grupo                     |
 
 **Escolha o remote ativo** (grava em `.dvc/config.local`, fora do git — não suja

@@ -52,6 +52,20 @@ def _load_train_params() -> dict:
         return yaml.safe_load(f)["train"]
 
 
+def _dvc_dataset_hash() -> str | None:
+    """Lê do dvc.lock o md5 do dataset consumido pelo estágio preprocess.
+
+    Amarra o run do MLflow à versão exata do dado rastreada pelo DVC.
+    """
+    dvc_lock_path = Path("dvc.lock")
+    if not dvc_lock_path.exists():
+        return None
+    with open(dvc_lock_path) as f:
+        lock = yaml.safe_load(f)
+    deps = lock["stages"]["preprocess"]["deps"]
+    return next((d["md5"] for d in deps if d["path"].endswith(".csv")), None)
+
+
 TRAIN_PARAMS = _load_train_params()
 RANDOM_STATE = TRAIN_PARAMS["random_state"]
 MLP_PARAMS = TRAIN_PARAMS["mlp"]
@@ -145,7 +159,7 @@ def _train_mlp_experiment(X_train, y_train, X_val, y_val, X_test, y_test, input_
             {"train_loss": trainer.history["train_loss"], "val_loss": trainer.history["val_loss"]},
             "training_history.json",
         )
-        mlflow.pytorch.log_model(trainer.model, "model")
+        mlflow.pytorch.log_model(trainer.model, name="model")
         logger.info("MLP — Test F1: {:.4f} | AUC: {:.4f}", metrics["f1"], metrics.get("auc_roc", 0))
 
     return {"trainer": trainer, "metrics": metrics}
@@ -169,61 +183,68 @@ def _save_artifacts(X_train, mlp_result) -> None:
 
 # ── Orquestrador ──────────────────────────────────────────────────────────────
 
-def main():
-    """Orquestra o pipeline completo de treino."""
-    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-    mlflow.set_experiment(MLFLOW_EXPERIMENT)
+def _log_run_params(splits: dict) -> None:
+    """Loga metadados do run: dataset (path + hash DVC), tamanhos dos splits e seed."""
+    mlflow.log_param("dataset", str(settings.data_path))
+    mlflow.log_param("train_size", len(splits["X_train_df"]))
+    mlflow.log_param("val_size", len(splits["X_val_df"]))
+    mlflow.log_param("test_size", len(splits["X_test_df"]))
+    mlflow.log_param("random_state", RANDOM_STATE)
+    if dataset_hash := _dvc_dataset_hash():
+        mlflow.set_tag("dvc_dataset_md5", dataset_hash)
 
-    splits = _load_splits()
-    X_train_df, X_val_df, X_test_df = splits["X_train_df"], splits["X_val_df"], splits["X_test_df"]
+
+def _promote_champion(champion: dict, best_name: str, X_test_df: pd.DataFrame) -> None:
+    """Promove o campeão clássico no Model Registry e persiste a evidência."""
+    logger.info("Promoting best baseline to Model Registry...")
+    version = log_and_register_champion(
+        champion["pipeline"],
+        X_test_df,
+        baseline_name=best_name,
+        metrics=champion["metrics"],
+        model_name=settings.registered_model_name,
+        alias=settings.champion_alias,
+        required=settings.mlflow_registry_required,
+    )
+    if version is None:
+        raise RuntimeError("Champion was not promoted to the MLflow Registry")
+    _write_registry_evidence(version, best_name)
+
+
+def _run_experiment(splits: dict, results: dict) -> None:
+    """Executa baselines, promove o campeão e treina o MLP dentro do run principal."""
+    X_train_df, X_test_df = splits["X_train_df"], splits["X_test_df"]
     X_train, X_val, X_test = splits["X_train"], splits["X_val"], splits["X_test"]
     y_train, y_val, y_test = splits["y_train"], splits["y_val"], splits["y_test"]
 
-    results: dict = {}
+    _log_run_params(splits)
 
-    with mlflow.start_run(run_name="churn_experiment"):
-        mlflow.log_param("dataset", str(settings.data_path))
-        mlflow.log_param("train_size", len(X_train_df))
-        mlflow.log_param("val_size", len(X_val_df))
-        mlflow.log_param("test_size", len(X_test_df))
-        mlflow.log_param("random_state", RANDOM_STATE)
+    logger.info("Training baselines...")
+    baseline_results, best_pipeline, best_name = _run_baselines(X_train_df, y_train)
+    results.update(baseline_results)
 
-        logger.info("Training baselines...")
-        baseline_results, best_pipeline, best_name = _run_baselines(X_train_df, y_train)
-        results.update(baseline_results)
+    champion = _evaluate_classical_champion(best_pipeline, best_name, splits)
+    results[best_name]["test"] = champion["metrics"]
+    _promote_champion(champion, best_name, X_test_df)
 
-        champion = _evaluate_classical_champion(best_pipeline, best_name, splits)
-        results[best_name]["test"] = champion["metrics"]
+    logger.info("Training MLP PyTorch...")
+    mlp_result = _train_mlp_experiment(
+        X_train, y_train.values,
+        X_val, y_val.values,
+        X_test, y_test.values,
+        input_dim=X_train.shape[1],
+    )
+    results["mlp_pytorch"] = {"test": mlp_result["metrics"]}
+    _save_artifacts(X_train, mlp_result)
 
-        logger.info("Promoting best baseline to Model Registry...")
-        version = log_and_register_champion(
-            champion["pipeline"],
-            X_test_df,
-            baseline_name=best_name,
-            metrics=champion["metrics"],
-            model_name=settings.registered_model_name,
-            alias=settings.champion_alias,
-            required=settings.mlflow_registry_required,
-        )
-        if version is None:
-            raise RuntimeError("Champion was not promoted to the MLflow Registry")
-        _write_registry_evidence(version, best_name)
+    mlflow.log_metric(
+        "mlp_vs_best_baseline_f1_delta",
+        mlp_result["metrics"]["f1"] - champion["metrics"]["f1"],
+    )
 
-        logger.info("Training MLP PyTorch...")
-        mlp_result = _train_mlp_experiment(
-            X_train, y_train.values,
-            X_val, y_val.values,
-            X_test, y_test.values,
-            input_dim=X_train.shape[1],
-        )
-        results["mlp_pytorch"] = {"test": mlp_result["metrics"]}
 
-        _save_artifacts(X_train, mlp_result)
-
-        mlp_f1 = mlp_result["metrics"]["f1"]
-        best_baseline_f1 = champion["metrics"]["f1"]
-        mlflow.log_metric("mlp_vs_best_baseline_f1_delta", mlp_f1 - best_baseline_f1)
-
+def _log_results_summary(results: dict) -> None:
+    """Imprime um resumo tabular das métricas de cada modelo treinado."""
     logger.info("\nResults summary:")
     for name, metric_groups in results.items():
         metrics = metric_groups.get("test", metric_groups.get("cv", {}))
@@ -233,18 +254,34 @@ def main():
             metrics["precision"], metrics["recall"],
         )
 
+
+def _persist_results(results: dict) -> None:
+    """Salva as métricas de todos os modelos em models/results.json."""
+    rounded = {
+        model: {
+            group: {metric: round(value, 4) for metric, value in values.items()}
+            for group, values in groups.items()
+        }
+        for model, groups in results.items()
+    }
     with open(MODELS_DIR / "results.json", "w") as f:
-        json.dump(
-            {
-                model: {
-                    group: {metric: round(value, 4) for metric, value in values.items()}
-                    for group, values in groups.items()
-                }
-                for model, groups in results.items()
-            },
-            f, indent=2,
-        )
+        json.dump(rounded, f, indent=2)
     logger.info("Results saved to models/results.json")
+
+
+def main():
+    """Orquestra o pipeline completo de treino."""
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    mlflow.set_experiment(MLFLOW_EXPERIMENT)
+
+    splits = _load_splits()
+    results: dict = {}
+
+    with mlflow.start_run(run_name="churn_experiment"):
+        _run_experiment(splits, results)
+
+    _log_results_summary(results)
+    _persist_results(results)
 
 
 if __name__ == "__main__":
