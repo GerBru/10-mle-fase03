@@ -1,7 +1,11 @@
 # Documentação Técnica — Churn Prediction Pipeline
 
 **FIAP MLE Tech Challenge Fase 1**  
-Versão: 1.0.0 | Referência para o vídeo STAR (5 min)
+Versão: 2.0.0 | Visão técnica da solução
+
+> O roteiro atualizado e cronometrado da apresentação está em
+> [`roteiro_video_star.md`](roteiro_video_star.md). A seção 12 abaixo foi mantida
+> apenas como histórico da documentação da Fase 1.
 
 ---
 
@@ -81,13 +85,17 @@ Com 73%/27% de split, accuracy é enganosa. As métricas escolhidas são:
 │                                                                 │
 │  POST /predict → Pydantic validation → preprocessor.transform() │
 │                                ↓                                │
-│                   MLP.forward() → sigmoid → threshold           │
+│       champion sklearn (padrão) ou MLP → probabilidade          │
 │                                ↓                                │
 │         { churn_probability, prediction, risk_level }           │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**Decisão chave de design:** o `preprocessor.joblib` salvo no treino inclui o `FeatureEngineerTransformer` — quando a API carrega esse arquivo e chama `.transform()`, todo o processamento (feature engineering + scaling + encoding) é aplicado automaticamente. Treino e inferência passam pelo **exato mesmo código**, eliminando o risco de *training-serving skew*.
+**Decisão chave de design:** a API carrega por padrão o pipeline sklearn campeão,
+que encapsula feature engineering, scaling, encoding e classificador. A MLP da
+Fase 1 usa o mesmo `preprocessor.joblib` e pode ser ativada com
+`MODEL_SOURCE=mlp`. Assim, ambos os caminhos reutilizam as transformações ajustadas
+no treino e evitam *training-serving skew*.
 
 ---
 
@@ -606,7 +614,7 @@ uv run mlflow ui --backend-store-uri sqlite:///mlflow.db --host 0.0.0.0 --port 5
 | **Pipeline reprodutível**           | `build_full_pipeline()` salvo em joblib garante mesma transformação no treino e na API                  |
 | **Logging estruturado**             | `logging.getLogger(__name__)` em todos os módulos; JSON no middleware da API                            |
 | **Schema validation**               | Pandera valida o dataset antes do treino; Pydantic valida entradas da API                               |
-| **Testes automatizados**            | 43 testes cobrindo dados, schema, modelo e API                                                          |
+| **Testes automatizados**            | 82 testes e 81,86% de cobertura, incluindo DVC, Registry, API e seleção sem vazamento                  |
 | **Linting zero erros**              | `ruff check` sem warnings                                                                               |
 | **Single source of truth**          | `pyproject.toml` define dependências, ruff e pytest                                                     |
 
@@ -658,4 +666,3 @@ uv run mlflow ui --backend-store-uri sqlite:///mlflow.db --host 0.0.0.0 --port 5
 - Mostrar: chamada curl ao /predict com resposta JSON
 - Mostrar: MLflow UI com comparação de modelos
 - Mostrar: `pytest` com 43 passed
-

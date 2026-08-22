@@ -5,9 +5,9 @@
 
 | Campo                | Valor                                                                                                                                           |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Nome**             | ChurnMLP                                                                                                                                        |
-| **Versão**           | 1.1.0                                                                                                                                           |
-| **Tipo**             | Multi-Layer Perceptron (PyTorch)                                                                                                                |
+| **Nome**             | `churn-classifier@champion` (serving padrão) + ChurnMLP (comparativo da Fase 1)                                                                |
+| **Versão**           | Controlada pelo MLflow Registry e registrada em `models/registry.json`                                                                          |
+| **Tipo**             | Pipeline sklearn (Logistic Regression campeã) e Multi-Layer Perceptron (PyTorch)                                                               |
 | **Arquitetura**      | Linear(59→128) → BN → ReLU → Dropout(0.3) → Linear(128→64) → BN → ReLU → Dropout(0.3) → Linear(64→32) → BN → ReLU → Dropout(0.3) → Linear(32→1) |
 | **Loss**             | BCEWithLogitsLoss com pos_weight (balanceamento de classe)                                                                                      |
 | **Otimizador**       | Adam (lr=1e-3, weight_decay=1e-4) + ReduceLROnPlateau                                                                                           |
@@ -18,7 +18,7 @@
 
 ## Uso Pretendido
 
-Rede neural MLP (Multi-Layer Perceptron) treinada com PyTorch para prever a probabilidade de churn de clientes de uma operadora de telecomunicacoes. O modelo e parte de um pipeline end-to-end que inclui engenharia de features, treinamento, comparacao com baselines e servico via API REST.
+Sistema para prever a probabilidade de churn de clientes de uma operadora de telecomunicacoes. A API serve por padrão o pipeline sklearn promovido como `churn-classifier@champion`; a MLP da Fase 1 foi preservada e pode ser selecionada com `MODEL_SOURCE=mlp`.
 
 **Caso de uso primario:** ranquear clientes por risco de cancelamento para priorizacao de acoes preventivas de retencao pela equipe de Customer Success.
 
@@ -109,42 +109,41 @@ Input (59)
 
 ## Metricas (conjunto de teste — 1.409 registros, 374 churners)
 
-### Modelo Principal: MLP PyTorch (threshold = 0.50)
+### Modelo servido: Logistic Regression campeã (threshold = 0.50)
 
 
 | Metrica  | Valor      |
 | -------- | ---------- |
-| F1-Score | **0.6245** |
-| AUC-ROC  | **0.8567** |
-| Precisao | 0.6588     |
-| Recall   | 0.5936     |
-| Acuracia | 0.8105     |
+| F1-Score | **0.6176** |
+| AUC-ROC  | **0.8531** |
+| Precisao | 0.5087     |
+| Recall   | 0.7861     |
+| Acuracia | 0.7417     |
 
 
-### Matriz de Confusao (threshold = 0.50)
+## Selecao e comparacao
+
+Os baselines são selecionados por validação cruzada estratificada apenas no conjunto
+de desenvolvimento. O teste permanece intocado até o reajuste final do campeão.
 
 
-|                 | Previsto: Nao Churn | Previsto: Churn |
-| --------------- | ------------------- | --------------- |
-| Real: Nao Churn | TN = 920            | FP = 115        |
-| Real: Churn     | FN = 152            | TP = 222        |
+| Baseline              | F1 médio CV | AUC-ROC médio CV |
+| --------------------- | ----------- | ---------------- |
+| DummyClassifier       | 0.2715      | 0.5068           |
+| Random Forest         | 0.5300      | 0.8322           |
+| Gradient Boosting     | 0.6023      | 0.8578           |
+| Logistic Regression 🏆 | **0.6424**  | **0.8586**       |
+
+| Modelo final          | F1 teste | AUC-ROC | Precisao | Recall | Acuracia |
+| --------------------- | -------- | ------- | -------- | ------ | -------- |
+| Logistic Regression 🏆 | 0.6176   | 0.8531  | 0.5087   | 0.7861 | 0.7417   |
+| **MLP PyTorch**       | **0.6308** | 0.8521 | 0.5082   | **0.8316** | 0.7417 |
 
 
----
-
-## Comparacao com Baselines
-
-
-| Modelo              | F1         | AUC-ROC    | Precisao | Recall     | Acuracia   |
-| ------------------- | ---------- | ---------- | -------- | ---------- | ---------- |
-| DummyClassifier     | 0.2903     | 0.5163     | 0.2891   | 0.2914     | 0.6217     |
-| Random Forest       | 0.5760     | 0.8323     | 0.6355   | 0.5267     | 0.7942     |
-| Gradient Boosting   | 0.5944     | 0.8555     | 0.6689   | 0.5348     | 0.8062     |
-| Logistic Regression | 0.6141     | 0.8533     | 0.6625   | 0.5722     | 0.8091     |
-| **MLP PyTorch**     | **0.6245** | **0.8567** | 0.6588   | **0.5936** | **0.8105** |
-
-
-**Conclusao:** O MLP supera todos os baselines em F1, AUC-ROC, Recall e Acuracia. O melhor baseline e a Regressao Logistica (F1=0.6141), que o MLP supera em +1,0 p.p. de F1 e +0,34 p.p. de AUC. A vantagem e especialmente relevante no Recall: capturar mais clientes que efetivamente cancelarao e a metrica mais critica para acoes de retencao.
+**Conclusao:** A Logistic Regression foi a melhor baseline por F1 médio de CV e foi
+promovida como campeã. A MLP obteve F1 e recall de teste ligeiramente maiores, mas
+o Registry mantém o pipeline sklearn como entrega da Fase 2 e a API torna essa
+origem verificável no endpoint `/health`.
 
 ---
 
@@ -231,7 +230,7 @@ Input (59)
 | Metrica                             | Frequencia | Limiar de Alerta                            | Acao                           |
 | ----------------------------------- | ---------- | ------------------------------------------- | ------------------------------ |
 | Distribuicao de `churn_probability` | Semanal    | PSI > 0.2 vs. baseline                      | Investigar data drift          |
-| F1-Score (ground truth delay)       | Mensal     | Queda > 5 p.p. vs. baseline (0.6245)        | Acionar retreinamento          |
+| F1-Score (ground truth delay)       | Mensal     | Queda > 5 p.p. vs. campeão (0.6176)         | Acionar retreinamento          |
 | Taxa de missings por feature        | Diaria     | > 5% em qualquer feature critica            | Alertar engenharia de dados    |
 | Volume de predicoes (OOD)           | Diaria     | > 10% requests com prob. extrema inesperada | Revisar distribuicao           |
 | Latencia da API (p95)               | Continuo   | > 500ms                                     | Escalar ou otimizar inferencia |
@@ -248,9 +247,10 @@ Input (59)
 | --------------- | ----------------------------- | ------------------------------------------------- |
 | Pesos do MLP    | `models/mlp_model.pt`         | Checkpoint PyTorch com best val loss              |
 | Preprocessador  | `models/preprocessor.joblib`  | Pipeline sklearn (FeatureEngineer + Scaler + OHE) |
-| Melhor baseline | `models/best_baseline.joblib` | Logistic Regression (F1=0.6141 no test set)       |
+| Melhor baseline | `models/best_baseline.joblib` | Logistic Regression (F1=0.6176 no teste intocado) |
+| Evidência Registry | `models/registry.json`     | nome, versão, alias, run e URI do campeão          |
 | Configuracao    | `models/model_config.json`    | `{"input_dim": 59}`                               |
-| Metricas        | `models/results.json`         | Metricas de todos os modelos no test set          |
+| Metricas        | `models/results.json`         | CV dos baselines e teste apenas dos modelos finais |
 
 
 ---
@@ -266,5 +266,3 @@ Input (59)
 | Versao              | 1.1.0                          |
 | Framework           | PyTorch 2.x / scikit-learn 1.x |
 | Experimento MLflow  | `churn-prediction`             |
-
-
