@@ -1,0 +1,56 @@
+{
+  "dummy_classifier": {
+    "cv": {
+      "accuracy": 0.619,
+      "f1": 0.2715,
+      "precision": 0.2756,
+      "recall": 0.2676,
+      "roc_auc": 0.5068
+    }
+  },
+  "logistic_regression": {
+    "cv": {
+      "accuracy": 0.7576,
+      "f1": 0.6424,
+      "precision": 0.528,
+      "recall": 0.8203,
+      "roc_auc": 0.8586
+    },
+    "test": {
+      "accuracy": 0.7417,
+      "f1": 0.6176,
+      "precision": 0.5087,
+      "recall": 0.7861,
+      "auc_roc": 0.8531,
+      "pr_auc": 0.6691
+    }
+  },
+  "random_forest": {
+    "cv": {
+      "accuracy": 0.7793,
+      "f1": 0.53,
+      "precision": 0.6099,
+      "recall": 0.4694,
+      "roc_auc": 0.8322
+    }
+  },
+  "gradient_boosting": {
+    "cv": {
+      "accuracy": 0.8067,
+      "f1": 0.6023,
+      "precision": 0.663,
+      "recall": 0.5527,
+      "roc_auc": 0.8578
+    }
+  },
+  "mlp_pytorch": {
+    "test": {
+      "accuracy": 0.7417,
+      "f1": 0.6308,
+      "precision": 0.5082,
+      "recall": 0.8316,
+      "auc_roc": 0.8521,
+      "pr_auc": 0.6595
+    }
+  }
+}

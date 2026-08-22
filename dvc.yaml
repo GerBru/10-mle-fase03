@@ -30,6 +30,8 @@ stages:
       - models/best_baseline.joblib
       - models/mlp_model.pt
       - models/model_config.json
+      - models/registry.json:
+          cache: false
     metrics:
       - models/results.json:
           cache: false
