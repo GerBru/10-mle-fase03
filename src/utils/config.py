@@ -57,12 +57,16 @@ class Settings(BaseSettings):
     # MLflow
     mlflow_tracking_uri: str = Field(default="http://localhost:5001")
     mlflow_experiment_name: str = Field(default="churn-prediction")
+    mlflow_registry_required: bool = Field(default=True)
+    registered_model_name: str = Field(default="churn-classifier")
+    champion_alias: str = Field(default="champion")
 
     # API
     api_host: str = Field(default="0.0.0.0")
     api_port: int = Field(default=8000)
     api_version: str = Field(default="1.0.0")
     models_dir: str = Field(default="models")
+    model_source: Literal["champion", "mlp"] = Field(default="champion")
 
     # Segurança — JWT
     jwt_secret_key: str = Field(

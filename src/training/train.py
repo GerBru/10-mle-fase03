@@ -24,10 +24,11 @@ import joblib
 import mlflow
 import mlflow.pytorch
 import mlflow.sklearn
+import pandas as pd
 import torch
 import yaml
 
-from src.models.baseline import build_baselines, train_baseline
+from src.models.baseline import build_baselines, refit_and_evaluate, train_baseline
 from src.models.evaluation import compute_metrics
 from src.models.mlp import MLPTrainer
 from src.models.registry import log_and_register_champion
@@ -65,28 +66,62 @@ def _load_splits() -> dict:
     return joblib.load(splits_path)
 
 
-def _run_baselines(X_train_df, y_train, X_test_df, y_test) -> tuple:
-    """Treina baselines com CV e retorna (results_dict, best_pipeline, best_name)."""
+def _run_baselines(X_train_df, y_train) -> tuple:
+    """Seleciona o melhor baseline usando apenas o F1 médio da CV."""
     results: dict = {}
     best_f1 = 0.0
     best_pipeline = None
     best_name = ""
 
     for name, bl_pipeline, params in build_baselines():
-        res = train_baseline(bl_pipeline, X_train_df, y_train, X_test_df, y_test, name, params)
-        results[name] = res["metrics"]
-        if res["metrics"]["f1"] > best_f1:
-            best_f1 = res["metrics"]["f1"]
+        res = train_baseline(bl_pipeline, X_train_df, y_train, name, params)
+        results[name] = {"cv": res["cv_metrics"]}
+        if res["cv_metrics"]["f1"] > best_f1:
+            best_f1 = res["cv_metrics"]["f1"]
             best_pipeline = res["pipeline"]
             best_name = name
 
     if best_pipeline:
-        joblib.dump(best_pipeline, MODELS_DIR / "best_baseline.joblib")
-        logger.info("Best baseline: {} (F1={:.4f})", best_name, best_f1)
+        logger.info("Best baseline: {} (CV F1={:.4f})", best_name, best_f1)
         mlflow.log_param("best_baseline", best_name)
-        mlflow.log_metric("best_baseline_f1", best_f1)
+        mlflow.log_metric("best_baseline_cv_f1", best_f1)
 
     return results, best_pipeline, best_name
+
+
+def _evaluate_classical_champion(best_pipeline, best_name: str, splits: dict) -> dict:
+    """Refita no desenvolvimento, avalia o teste e persiste o campeão clássico."""
+    X_development = pd.concat(
+        [splits["X_train_df"], splits["X_val_df"]], ignore_index=True
+    )
+    y_development = pd.concat(
+        [splits["y_train"], splits["y_val"]], ignore_index=True
+    )
+    champion, metrics = refit_and_evaluate(
+        best_pipeline,
+        X_development,
+        y_development,
+        splits["X_test_df"],
+        splits["y_test"],
+    )
+    joblib.dump(champion, MODELS_DIR / "best_baseline.joblib")
+    logger.info("{} — final test F1={:.4f}", best_name, metrics["f1"])
+    return {"pipeline": champion, "metrics": metrics}
+
+
+def _write_registry_evidence(version, best_name: str) -> dict:
+    """Persiste a versão promovida para auditoria e consumo pela API."""
+    evidence = {
+        "name": settings.registered_model_name,
+        "version": str(version.version),
+        "alias": settings.champion_alias,
+        "run_id": version.run_id,
+        "source": version.source,
+        "baseline_name": best_name,
+    }
+    path = MODELS_DIR / "registry.json"
+    path.write_text(json.dumps(evidence, indent=2, sort_keys=True), encoding="utf-8")
+    return evidence
 
 
 def _train_mlp_experiment(X_train, y_train, X_val, y_val, X_test, y_test, input_dim: int) -> dict:
@@ -154,18 +189,25 @@ def main():
         mlflow.log_param("random_state", RANDOM_STATE)
 
         logger.info("Training baselines...")
-        baseline_results, best_pipeline, best_name = _run_baselines(
-            X_train_df, y_train, X_test_df, y_test
-        )
+        baseline_results, best_pipeline, best_name = _run_baselines(X_train_df, y_train)
         results.update(baseline_results)
 
+        champion = _evaluate_classical_champion(best_pipeline, best_name, splits)
+        results[best_name]["test"] = champion["metrics"]
+
         logger.info("Promoting best baseline to Model Registry...")
-        log_and_register_champion(
-            best_pipeline,
+        version = log_and_register_champion(
+            champion["pipeline"],
             X_test_df,
             baseline_name=best_name,
-            metrics=baseline_results.get(best_name),
+            metrics=champion["metrics"],
+            model_name=settings.registered_model_name,
+            alias=settings.champion_alias,
+            required=settings.mlflow_registry_required,
         )
+        if version is None:
+            raise RuntimeError("Champion was not promoted to the MLflow Registry")
+        _write_registry_evidence(version, best_name)
 
         logger.info("Training MLP PyTorch...")
         mlp_result = _train_mlp_experiment(
@@ -174,18 +216,17 @@ def main():
             X_test, y_test.values,
             input_dim=X_train.shape[1],
         )
-        results["mlp_pytorch"] = mlp_result["metrics"]
+        results["mlp_pytorch"] = {"test": mlp_result["metrics"]}
 
         _save_artifacts(X_train, mlp_result)
 
         mlp_f1 = mlp_result["metrics"]["f1"]
-        best_baseline_f1 = max(
-            (m["f1"] for m in baseline_results.values()), default=0.0
-        )
+        best_baseline_f1 = champion["metrics"]["f1"]
         mlflow.log_metric("mlp_vs_best_baseline_f1_delta", mlp_f1 - best_baseline_f1)
 
     logger.info("\nResults summary:")
-    for name, metrics in results.items():
+    for name, metric_groups in results.items():
+        metrics = metric_groups.get("test", metric_groups.get("cv", {}))
         logger.info(
             "  {:<28} F1={:.4f}  AUC={:.4f}  Precision={:.4f}  Recall={:.4f}",
             name, metrics["f1"], metrics.get("auc_roc", 0),
@@ -194,7 +235,13 @@ def main():
 
     with open(MODELS_DIR / "results.json", "w") as f:
         json.dump(
-            {k: {m: round(v, 4) for m, v in v.items()} for k, v in results.items()},
+            {
+                model: {
+                    group: {metric: round(value, 4) for metric, value in values.items()}
+                    for group, values in groups.items()
+                }
+                for model, groups in results.items()
+            },
             f, indent=2,
         )
     logger.info("Results saved to models/results.json")
