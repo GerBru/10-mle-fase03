@@ -41,6 +41,7 @@ MODELS_DIR = Path("models")
 MODELS_DIR.mkdir(exist_ok=True)
 PROCESSED_DIR = Path("data/processed")
 PARAMS_PATH = Path("params.yaml")
+DVC_LOCK_PATH = Path("dvc.lock")
 
 MLFLOW_EXPERIMENT = "churn-prediction"
 MLFLOW_TRACKING_URI = settings.mlflow_tracking_uri
@@ -57,12 +58,11 @@ def _dvc_dataset_hash() -> str | None:
 
     Amarra o run do MLflow à versão exata do dado rastreada pelo DVC.
     """
-    dvc_lock_path = Path("dvc.lock")
-    if not dvc_lock_path.exists():
+    if not DVC_LOCK_PATH.exists():
         return None
-    with open(dvc_lock_path) as f:
-        lock = yaml.safe_load(f)
-    deps = lock["stages"]["preprocess"]["deps"]
+    with open(DVC_LOCK_PATH) as f:
+        lock = yaml.safe_load(f) or {}
+    deps = lock.get("stages", {}).get("preprocess", {}).get("deps", [])
     return next((d["md5"] for d in deps if d["path"].endswith(".csv")), None)
 
 

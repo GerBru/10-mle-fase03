@@ -405,6 +405,17 @@ make dvc-push             # publica os artefatos no remote ativo
 > `models/results.json` é declarado como métrica com `cache: false`, então fica
 > versionado no git e pode ser comparado entre commits com `dvc metrics diff`.
 
+> **Por que `git status` fica sujo depois de todo treino.** `models/registry.json`
+> também é declarado com `cache: false` — ou seja, é rastreado pelo git, não pelo
+> cache do DVC. Ele guarda a evidência da promoção (`run_id` e `source` da versão
+> criada no Registry), e o `run_id` muda a cada execução. Portanto **é esperado**
+> que `dvc repro` deixe esse arquivo modificado mesmo quando as métricas não
+> mudaram. É o preço de manter a evidência auditável dentro do repositório: sem
+> isso, não haveria como provar, a partir de um commit, qual run do MLflow
+> originou o modelo daquele ponto da história. Commite a mudança junto com o
+> resultado do treino, ou descarte com `git checkout -- models/registry.json` se
+> a execução foi apenas exploratória.
+
 ---
 
 ## 🧪 Como testar o DVC (local e remote)
@@ -496,6 +507,12 @@ entrega sem evidência de promoção. O modo opcional existe apenas para diagnó
 > O Registry exige backend com banco de dados. O projeto usa
 > `MLFLOW_TRACKING_URI=http://localhost:5001` com SQLite; um file store puro
 > não suporta `register_model`.
+
+Cada promoção grava `models/registry.json` com nome, versão, alias, `run_id` e
+`source` — a evidência que a API consome via `ChampionModelRepository` e que
+permite auditar, a partir de qualquer commit, qual run originou o modelo servido.
+Como o `run_id` muda a cada treino, esse arquivo aparece modificado após todo
+`dvc repro` (ver a nota na seção do pipeline).
 
 Consulte no MLflow UI: **Models → churn-classifier**.
 
@@ -863,9 +880,10 @@ sklearn conforme o escopo da Fase 2; a MLP permanece rastreada no MLflow Trackin
 
 ## 🧪 Testes
 
-82 testes passando e 81,86% de cobertura, cobrindo: smoke, schema (pandera), API (JWT + API Key + batch),
-model, preprocessing, fairness, Model Registry, configuração/segredos e aderência
-aos padrões documentados.
+94 testes passando, com folga confortável sobre o piso de 80% exigido pelo CI.
+Cobrem: smoke, schema (pandera), API (JWT + API Key + batch), model, preprocessing,
+fairness, detecção de drift, Model Registry, rastreabilidade DVC ↔ MLflow,
+configuração/segredos e aderência aos padrões documentados.
 
 ```bash
 make test
