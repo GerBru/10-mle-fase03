@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import torch
+import yaml
 from sklearn.linear_model import LogisticRegression
 
 from src.api.model_loader import ChampionModelRepository, LocalModelRepository
@@ -117,6 +118,77 @@ def test_run_baselines_selects_using_cv_f1(monkeypatch):
     assert results["a"]["cv"]["f1"] == 0.8
 
 
+def _write_lock(path, deps) -> None:
+    """Grava um dvc.lock mínimo com as dependências informadas no estágio preprocess."""
+    path.write_text(
+        yaml.safe_dump({"stages": {"preprocess": {"deps": deps}}}), encoding="utf-8"
+    )
+
+
+def test_dvc_dataset_hash_reads_csv_dependency(tmp_path, monkeypatch):
+    lock = tmp_path / "dvc.lock"
+    _write_lock(
+        lock,
+        [
+            {"path": "src/pipeline/preprocess.py", "md5": "aaa"},
+            {"path": "data/raw/Telco_customer_churn.csv", "md5": "bbb"},
+        ],
+    )
+    monkeypatch.setattr(train, "DVC_LOCK_PATH", lock)
+
+    assert train._dvc_dataset_hash() == "bbb"
+
+
+def test_dvc_dataset_hash_returns_none_without_lock(tmp_path, monkeypatch):
+    monkeypatch.setattr(train, "DVC_LOCK_PATH", tmp_path / "missing.lock")
+
+    assert train._dvc_dataset_hash() is None
+
+
+def test_dvc_dataset_hash_returns_none_without_csv_dependency(tmp_path, monkeypatch):
+    lock = tmp_path / "dvc.lock"
+    _write_lock(lock, [{"path": "src/pipeline/preprocess.py", "md5": "aaa"}])
+    monkeypatch.setattr(train, "DVC_LOCK_PATH", lock)
+
+    assert train._dvc_dataset_hash() is None
+
+
+def test_log_run_params_tags_dataset_version(monkeypatch):
+    tags: dict[str, str] = {}
+    params: dict[str, object] = {}
+    monkeypatch.setattr(train, "_dvc_dataset_hash", lambda: "63936da3")
+    monkeypatch.setattr(train.mlflow, "set_tag", lambda k, v: tags.update({k: v}))
+    monkeypatch.setattr(train.mlflow, "log_param", lambda k, v: params.update({k: v}))
+
+    train._log_run_params(
+        {
+            "X_train_df": pd.DataFrame({"x": [1, 2]}),
+            "X_val_df": pd.DataFrame({"x": [3]}),
+            "X_test_df": pd.DataFrame({"x": [4]}),
+        }
+    )
+
+    assert tags["dvc_dataset_md5"] == "63936da3"
+    assert params["train_size"] == 2
+
+
+def test_log_run_params_skips_tag_when_hash_unavailable(monkeypatch):
+    tags: dict[str, str] = {}
+    monkeypatch.setattr(train, "_dvc_dataset_hash", lambda: None)
+    monkeypatch.setattr(train.mlflow, "set_tag", lambda k, v: tags.update({k: v}))
+    monkeypatch.setattr(train.mlflow, "log_param", lambda *a: None)
+
+    train._log_run_params(
+        {
+            "X_train_df": pd.DataFrame({"x": [1]}),
+            "X_val_df": pd.DataFrame({"x": [2]}),
+            "X_test_df": pd.DataFrame({"x": [3]}),
+        }
+    )
+
+    assert tags == {}
+
+
 def test_registry_evidence_is_persisted(tmp_path, monkeypatch):
     monkeypatch.setattr(train, "MODELS_DIR", tmp_path)
     version = SimpleNamespace(version="7", run_id="run-1", source="models:/m-1")
@@ -172,6 +244,10 @@ def test_training_orchestrator_requires_and_records_promotion(tmp_path, monkeypa
     monkeypatch.setattr(train.mlflow, "set_experiment", lambda *a: None)
     monkeypatch.setattr(train.mlflow, "log_param", lambda *a: None)
     monkeypatch.setattr(train.mlflow, "log_metric", lambda *a: None)
+    # Sem este stub, set_tag abriria um run real do MLflow (a API inicia um run
+    # implicitamente quando não há nenhum ativo), fazendo o teste tocar o
+    # tracking store de verdade.
+    monkeypatch.setattr(train.mlflow, "set_tag", lambda *a: None)
 
     train.main()
 
